@@ -26,10 +26,6 @@
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
 
-  const userPill = document.getElementById("userPill");
-  const userEmail = document.getElementById("userEmail");
-  const logoutBtn = document.getElementById("logoutBtn");
-
   const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
   const typeTv = document.getElementById("typeTv");
@@ -49,7 +45,13 @@
   const modalBody = document.getElementById("modalBody");
   const toast = document.getElementById("toast");
 
-  // Supabase init
+  
+const profileBtn = document.getElementById("profileBtn");
+const profileMenu = document.getElementById("profileMenu");
+const profileEmail = document.getElementById("profileEmail");
+const profileLogout = document.getElementById("profileLogout");
+
+// Supabase init
   if (!SUPABASE_URL.startsWith("http")) {
     console.warn("Supabase URL not set yet.");
   }
@@ -78,28 +80,25 @@
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
-// Modal scroll lock (mobile-friendly; avoids width/zoom jitter)
-function lockBodyScroll() {
-  document.documentElement.classList.add("modal-open");
-  document.body.classList.add("modal-open");
-  document.documentElement.style.overscrollBehavior = "none";
+// Profile menu (mobile-friendly)
+function openProfileMenu() {
+  profileMenu.classList.remove("hidden");
 }
-function unlockBodyScroll() {
-  document.documentElement.classList.remove("modal-open");
-  document.body.classList.remove("modal-open");
-  document.documentElement.style.overscrollBehavior = "";
+function closeProfileMenu() {
+  profileMenu.classList.add("hidden");
+}
+function toggleProfileMenu() {
+  profileMenu.classList.toggle("hidden");
 }
 
 
   function openModal(html) {
     modalBody.innerHTML = html;
     modal.classList.remove("hidden");
-    lockBodyScroll();
   }
   function closeModal() {
     modal.classList.add("hidden");
     modalBody.innerHTML = "";
-    unlockBodyScroll();
   }
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
@@ -723,16 +722,16 @@ function unlockBodyScroll() {
     if (!sessionUser) {
       authPanel.classList.remove("hidden");
       appPanel.classList.add("hidden");
-      userPill.classList.add("hidden");
-      logoutBtn.classList.add("hidden");
+      profileBtn.classList.add("hidden");
+      closeProfileMenu();
       return;
     }
 
     authPanel.classList.add("hidden");
-    appPanel.classList.remove("hidden");
-    userPill.classList.remove("hidden");
-    logoutBtn.classList.remove("hidden");
-    userEmail.textContent = sessionUser.email || "Signed in";
+      appPanel.classList.remove("hidden");
+      profileBtn.classList.remove("hidden");
+      profileEmail.textContent = sessionUser.email || "Signed in";
+      closeProfileMenu();
     await loadLibrary();
   }
 
@@ -764,11 +763,31 @@ function unlockBodyScroll() {
     await refreshSessionUI();
   });
 
-  logoutBtn.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    showToast("Logged out");
+  showToast("Logged out");
     await refreshSessionUI();
   });
+
+
+// Profile menu interactions
+profileBtn.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleProfileMenu();
+});
+
+document.addEventListener("click", (e) => {
+  // Close if click outside
+  if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) {
+    closeProfileMenu();
+  }
+});
+
+profileLogout.addEventListener("click", async () => {
+  closeProfileMenu();
+  await supabase.auth.signOut();
+  showToast("Logged out");
+  await refreshSessionUI();
+});
+
 
   supabase.auth.onAuthStateChange(() => {
     refreshSessionUI();
