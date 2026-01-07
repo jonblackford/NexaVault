@@ -78,31 +78,13 @@
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
-
-  // Modal scroll lock (fixes iOS/Android "can't scroll" + background scroll bleed)
-  let __scrollY = 0;
-  function lockBodyScroll() {
-    __scrollY = window.scrollY || 0;
-    document.body.classList.add("modal-open");
-    document.body.style.top = `-${__scrollY}px`;
-  }
-  function unlockBodyScroll() {
-    document.body.classList.remove("modal-open");
-    const top = document.body.style.top;
-    document.body.style.top = "";
-    const y = top ? Math.abs(parseInt(top, 10)) : __scrollY;
-    window.scrollTo(0, y);
-  }
-
   function openModal(html) {
     modalBody.innerHTML = html;
     modal.classList.remove("hidden");
-    lockBodyScroll();
   }
   function closeModal() {
     modal.classList.add("hidden");
     modalBody.innerHTML = "";
-    unlockBodyScroll();
   }
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
@@ -436,7 +418,7 @@
                   class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
-                <label class="text-xs text-white/70">Scope</label>
+                <label class="text-xs text-white/70">Entry type</label>
                 <select id="scope" class="mt-1 w-full rounded-2xl px-3 py-2 input">
                   <option value="title" selected>${d.media_type === "tv" ? "Series" : "Movie"}</option>
                 </select>
@@ -484,7 +466,7 @@
         rating,
         comment,
         genre: d.genre,
-        cast_list: d.cast,
+        cast: d.cast,
         overview: d.overview,
         runtime: d.runtime,
         season_number: null,
@@ -577,7 +559,7 @@
             rating,
             comment,
             genre: d.genre,
-            cast_list: d.cast,
+            cast: d.cast,
             overview: d.overview,
             runtime: d.runtime,
             season_number,
@@ -609,7 +591,7 @@
               rating,
               comment,
               genre: d.genre,
-              cast_list: d.cast,
+              cast: d.cast,
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
               season_number,
@@ -672,7 +654,7 @@
                   class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
-                <label class="text-xs text-white/70">Scope</label>
+                <label class="text-xs text-white/70">Entry type</label>
                 <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(row.scope)}" disabled />
               </div>
             </div>
@@ -705,12 +687,23 @@
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      const payload = { ...row, format, rating, comment };
-      const ok = await upsertItem(payload);
-      if (ok) closeModal();
-    });
+      // Update in-place by row id (more reliable than upsert on mobile/edits)
+      const { error } = await supabase
+        .from("media_items")
+        .update({ format, rating, comment })
+        .eq("id", row.id);
 
-    document.getElementById("delBtn").addEventListener("click", async () => {
+      if (error) {
+        console.error(error);
+        showToast("Save failed");
+        return;
+      }
+
+      await loadLibrary();
+      showToast("Saved");
+      closeModal();
+    });
+document.getElementById("delBtn").addEventListener("click", async () => {
       await deleteItem(row.id);
       closeModal();
     });
