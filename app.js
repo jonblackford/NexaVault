@@ -26,7 +26,11 @@
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
 
-  const typeAll = document.getElementById("typeAll");
+  const profileBtn = document.getElementById("profileBtn");
+  const profileMenu = document.getElementById("profileMenu");
+  const profileEmail = document.getElementById("profileEmail");
+  const profileLogout = document.getElementById("profileLogout");
+const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
   const typeTv = document.getElementById("typeTv");
   const searchInput = document.getElementById("searchInput");
@@ -45,13 +49,7 @@
   const modalBody = document.getElementById("modalBody");
   const toast = document.getElementById("toast");
 
-  
-const profileBtn = document.getElementById("profileBtn");
-const profileMenu = document.getElementById("profileMenu");
-const profileEmail = document.getElementById("profileEmail");
-const profileLogout = document.getElementById("profileLogout");
-
-// Supabase init
+  // Supabase init
   if (!SUPABASE_URL.startsWith("http")) {
     console.warn("Supabase URL not set yet.");
   }
@@ -80,17 +78,11 @@ const profileLogout = document.getElementById("profileLogout");
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
-// Profile menu (mobile-friendly)
-function openProfileMenu() {
-  profileMenu.classList.remove("hidden");
-}
-function closeProfileMenu() {
-  profileMenu.classList.add("hidden");
-}
-function toggleProfileMenu() {
-  profileMenu.classList.toggle("hidden");
-}
 
+// Profile menu helpers
+function openProfileMenu() { profileMenu?.classList.remove("hidden"); }
+function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
+function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
 
   function openModal(html) {
     modalBody.innerHTML = html;
@@ -701,10 +693,21 @@ function toggleProfileMenu() {
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      const payload = { ...row, format, rating, comment };
-      const ok = await upsertItem(payload);
-      if (ok) closeModal();
-    });
+      const { error } = await supabase
+  .from("media_items")
+  .update({ format, rating, comment })
+  .eq("id", row.id);
+
+if (error) {
+  console.error(error);
+  showToast("Save failed");
+  return;
+}
+
+await loadLibrary();
+showToast("Saved");
+closeModal();
+});
 
     document.getElementById("delBtn").addEventListener("click", async () => {
       await deleteItem(row.id);
@@ -722,18 +725,18 @@ function toggleProfileMenu() {
     if (!sessionUser) {
       authPanel.classList.remove("hidden");
       appPanel.classList.add("hidden");
-      profileBtn.classList.add("hidden");
+      profileBtn?.classList.add("hidden");
       closeProfileMenu();
       return;
     }
 
     authPanel.classList.add("hidden");
-      appPanel.classList.remove("hidden");
-      profileBtn.classList.remove("hidden");
-      profileEmail.textContent = sessionUser.email || "Signed in";
-      closeProfileMenu();
+    appPanel.classList.remove("hidden");
+    profileBtn?.classList.remove("hidden");
+    if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
+    closeProfileMenu();
     await loadLibrary();
-  }
+}
 
   signInBtn.addEventListener("click", async () => {
     authMsg.textContent = "";
@@ -767,31 +770,27 @@ function toggleProfileMenu() {
     await refreshSessionUI();
   });
 
-
-// Profile menu interactions
-profileBtn.addEventListener("click", (e) => {
+// Profile menu interactions (safe on pages where header exists)
+profileBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleProfileMenu();
 });
 
 document.addEventListener("click", (e) => {
-  // Close if click outside
-  if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) {
-    closeProfileMenu();
-  }
+  if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) closeProfileMenu();
 });
 
-profileLogout.addEventListener("click", async () => {
+profileLogout?.addEventListener("click", async () => {
   closeProfileMenu();
   await supabase.auth.signOut();
   showToast("Logged out");
   await refreshSessionUI();
 });
 
+supabase.auth.onAuthStateChange(() => {
+  refreshSessionUI();
+});
 
-  supabase.auth.onAuthStateChange(() => {
-    refreshSessionUI();
-  });
 
   // =========================
   // Search + buttons
@@ -802,9 +801,9 @@ profileLogout.addEventListener("click", async () => {
     btnActive(typeMovie, t === "movie");
     btnActive(typeTv, t === "tv");
   }
-  typeAll.addEventListener("click", () => setSearchType("all"));
-  typeMovie.addEventListener("click", () => setSearchType("movie"));
-  typeTv.addEventListener("click", () => setSearchType("tv"));
+  typeAll?.addEventListener("click", () => setSearchType("all"));
+  typeMovie?.addEventListener("click", () => setSearchType("movie"));
+  typeTv?.addEventListener("click", () => setSearchType("tv"));
   setSearchType("all");
 
   async function doSearch() {
@@ -823,8 +822,8 @@ profileLogout.addEventListener("click", async () => {
       searchBtn.textContent = "Search";
     }
   }
-  searchBtn.addEventListener("click", doSearch);
-  searchInput.addEventListener("keydown", (e) => {
+  searchBtn?.addEventListener("click", doSearch);
+  searchInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") doSearch();
   });
 
@@ -835,7 +834,7 @@ profileLogout.addEventListener("click", async () => {
   });
 
   // Filters re-render
-  [filterScope, filterMediaType, filterFormat].forEach(el => el.addEventListener("change", renderLibrary));
+  [filterScope, filterMediaType, filterFormat].filter(Boolean).forEach(el => el.addEventListener("change", renderLibrary));
 
   // =========================
   // Boot
