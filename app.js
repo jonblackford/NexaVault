@@ -687,12 +687,23 @@
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      const payload = { ...row, format, rating, comment };
-      const ok = await upsertItem(payload);
-      if (ok) closeModal();
-    });
+      // Update only editable fields by row id (reliable + avoids upsert/RLS/unique issues)
+      const { error } = await supabase
+        .from("media_items")
+        .update({ format, rating, comment })
+        .eq("id", row.id);
 
-    document.getElementById("delBtn").addEventListener("click", async () => {
+      if (error) {
+        console.error(error);
+        showToast("Save failed");
+        return;
+      }
+
+      await loadLibrary();
+      showToast("Saved");
+      closeModal();
+    });
+document.getElementById("delBtn").addEventListener("click", async () => {
       await deleteItem(row.id);
       closeModal();
     });
@@ -806,5 +817,15 @@
   // =========================
   // Boot
   // =========================
-  refreshSessionUI();
+refreshSessionUI();
+
+  // PWA: register service worker (enables "Add to Home Screen" install + offline shell)
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch((err) => {
+        console.warn("Service worker registration failed:", err);
+      });
+    });
+  }
 })();
+
