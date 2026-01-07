@@ -466,7 +466,7 @@
         rating,
         comment,
         genre: d.genre,
-        cast: d.cast,
+        cast_list: d.cast,
         overview: d.overview,
         runtime: d.runtime,
         season_number: null,
@@ -559,7 +559,7 @@
             rating,
             comment,
             genre: d.genre,
-            cast: d.cast,
+            cast_list: d.cast,
             overview: d.overview,
             runtime: d.runtime,
             season_number,
@@ -591,7 +591,7 @@
               rating,
               comment,
               genre: d.genre,
-              cast: d.cast,
+              cast_list: d.cast,
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
               season_number,
@@ -638,7 +638,7 @@
 
             <div class="glass rounded-2xl p-4 border border-white/10">
               <div class="text-sm text-white/70">Cast</div>
-              <div class="text-sm mt-1">${esc(row.cast || "—")}</div>
+              <div class="text-sm mt-1">${esc(row.cast_list || "—")}</div>
             </div>
 
             <div class="grid md:grid-cols-3 gap-3">
