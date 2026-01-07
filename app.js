@@ -78,13 +78,31 @@
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
+
+  // Modal scroll lock (fixes iOS/Android "can't scroll" + background scroll bleed)
+  let __scrollY = 0;
+  function lockBodyScroll() {
+    __scrollY = window.scrollY || 0;
+    document.body.classList.add("modal-open");
+    document.body.style.top = `-${__scrollY}px`;
+  }
+  function unlockBodyScroll() {
+    document.body.classList.remove("modal-open");
+    const top = document.body.style.top;
+    document.body.style.top = "";
+    const y = top ? Math.abs(parseInt(top, 10)) : __scrollY;
+    window.scrollTo(0, y);
+  }
+
   function openModal(html) {
     modalBody.innerHTML = html;
     modal.classList.remove("hidden");
+    lockBodyScroll();
   }
   function closeModal() {
     modal.classList.add("hidden");
     modalBody.innerHTML = "";
+    unlockBodyScroll();
   }
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
