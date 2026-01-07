@@ -2,15 +2,8 @@
 <html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
   <title>NexaVault • Media Catalog</title>
-
-  <meta name="theme-color" content="#0b1023" />
-  <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-
 
   <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -98,8 +91,7 @@
     /* Mobile + modal scrolling fixes */
     body.modal-open{
       overflow: hidden;
-      position: fixed;
-      width: 100%;
+      touch-action: none;
     }
     #searchResults{
       max-height: 60vh;
@@ -119,6 +111,16 @@
       #modalShell{ align-items: flex-start; }
       #modalPanel{ max-height: calc(100vh - 1.25rem); }
     }
+
+  
+    /* Mobile zoom + horizontal drift fixes */
+    html, body { width: 100%; overflow-x: hidden; }
+    * , *::before, *::after { box-sizing: border-box; }
+    img, video, canvas { max-width: 100%; height: auto; }
+    /* iOS Safari zooms inputs under 16px */
+    input, select, textarea, button { font-size: 16px; }
+    /* Prefer dynamic viewport height in PWA/mobile */
+    #modalShell { min-height: 100dvh; }
 
   </style>
 </head>

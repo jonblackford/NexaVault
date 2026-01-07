@@ -78,13 +78,28 @@
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
+// Modal scroll lock (mobile-friendly; avoids width/zoom jitter)
+function lockBodyScroll() {
+  document.documentElement.classList.add("modal-open");
+  document.body.classList.add("modal-open");
+  document.documentElement.style.overscrollBehavior = "none";
+}
+function unlockBodyScroll() {
+  document.documentElement.classList.remove("modal-open");
+  document.body.classList.remove("modal-open");
+  document.documentElement.style.overscrollBehavior = "";
+}
+
+
   function openModal(html) {
     modalBody.innerHTML = html;
     modal.classList.remove("hidden");
+    lockBodyScroll();
   }
   function closeModal() {
     modal.classList.add("hidden");
     modalBody.innerHTML = "";
+    unlockBodyScroll();
   }
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
@@ -687,23 +702,12 @@
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      // Update only editable fields by row id (reliable + avoids upsert/RLS/unique issues)
-      const { error } = await supabase
-        .from("media_items")
-        .update({ format, rating, comment })
-        .eq("id", row.id);
-
-      if (error) {
-        console.error(error);
-        showToast("Save failed");
-        return;
-      }
-
-      await loadLibrary();
-      showToast("Saved");
-      closeModal();
+      const payload = { ...row, format, rating, comment };
+      const ok = await upsertItem(payload);
+      if (ok) closeModal();
     });
-document.getElementById("delBtn").addEventListener("click", async () => {
+
+    document.getElementById("delBtn").addEventListener("click", async () => {
       await deleteItem(row.id);
       closeModal();
     });
@@ -817,15 +821,5 @@ document.getElementById("delBtn").addEventListener("click", async () => {
   // =========================
   // Boot
   // =========================
-refreshSessionUI();
-
-  // PWA: register service worker (enables "Add to Home Screen" install + offline shell)
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch((err) => {
-        console.warn("Service worker registration failed:", err);
-      });
-    });
-  }
+  refreshSessionUI();
 })();
-
