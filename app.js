@@ -466,7 +466,7 @@
         rating,
         comment,
         genre: d.genre,
-        cast: d.cast,
+        cast_list: d.cast,
         overview: d.overview,
         runtime: d.runtime,
         season_number: null,
@@ -559,7 +559,7 @@
             rating,
             comment,
             genre: d.genre,
-            cast: d.cast,
+            cast_list: d.cast,
             overview: d.overview,
             runtime: d.runtime,
             season_number,
@@ -591,7 +591,7 @@
               rating,
               comment,
               genre: d.genre,
-              cast: d.cast,
+              cast_list: d.cast,
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
               season_number,
@@ -655,7 +655,7 @@
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry type</label>
-                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(row.scope)}" disabled />
+                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(row.scope === "title" ? (row.media_type === "tv" ? "Series" : "Movie") : (row.scope === "season" ? `Season ${row.season_number}` : `S${row.season_number}E${row.episode_number}`))}" disabled />
               </div>
             </div>
 
@@ -687,23 +687,12 @@
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      // Update in-place by row id (more reliable than upsert on mobile/edits)
-      const { error } = await supabase
-        .from("media_items")
-        .update({ format, rating, comment })
-        .eq("id", row.id);
-
-      if (error) {
-        console.error(error);
-        showToast("Save failed");
-        return;
-      }
-
-      await loadLibrary();
-      showToast("Saved");
-      closeModal();
+      const payload = { ...row, format, rating, comment };
+      const ok = await upsertItem(payload);
+      if (ok) closeModal();
     });
-document.getElementById("delBtn").addEventListener("click", async () => {
+
+    document.getElementById("delBtn").addEventListener("click", async () => {
       await deleteItem(row.id);
       closeModal();
     });
