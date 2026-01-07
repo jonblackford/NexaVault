@@ -8,9 +8,9 @@
   // =========================
   // ✅ CONFIG (EDIT THESE)
   // =========================
-  const SUPABASE_URL = "PASTE_SUPABASE_URL_HERE";
-  const SUPABASE_ANON_KEY = "PASTE_SUPABASE_ANON_KEY_HERE";
-  const TMDB_API_KEY = "PASTE_TMDB_API_KEY_HERE";
+  const SUPABASE_URL = "https://zmljybyharvunwctxbwp.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptbGp5YnloYXJ2dW53Y3R4YndwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4MDQ5NDgsImV4cCI6MjA4MzM4MDk0OH0.h6TW7xX4B4y8D-yBL6-WqnhYWo0MqFAAP14lzXmXyrg";
+  const TMDB_API_KEY = "cc4e1c1296a271801dd38dd0c5742ec3";
   // =========================
 
   const TMDB_BASE = "https://api.themoviedb.org/3";
