@@ -31,7 +31,6 @@
   const profileMenu = document.getElementById("profileMenu");
   const profileEmail = document.getElementById("profileEmail");
   const profileLogout = document.getElementById("profileLogout");
-  const profileCollections = document.getElementById("profileCollections");
 
   const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
@@ -47,8 +46,6 @@
   const sortBy = document.getElementById("sortBy");
   const minRating = document.getElementById("minRating");
   const statsText = document.getElementById("statsText");
-  const viewGrid = document.getElementById("viewGrid");
-  const viewList = document.getElementById("viewList");
 
   const grid = document.getElementById("grid");
   const emptyState = document.getElementById("emptyState");
@@ -100,137 +97,6 @@
   function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
   function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
 
-
-
-// =========================
-// Collections (create + view)
-// =========================
-async function collectionsTablesExist() {
-  try {
-    const { error } = await supabase.from("collections").select("id").limit(1);
-    return !error;
-  } catch (e) {
-    return false;
-  }
-}
-
-async function openCollectionsManager() {
-  const ok = await collectionsTablesExist();
-  if (!ok) {
-    openModal(`
-      <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <div class="text-lg font-semibold">Collections</div>
-          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
-        </div>
-        <div class="text-sm text-white/70">
-          Collections tables are not set up in Supabase yet. Run <b>supabase_collections.sql</b> and refresh.
-        </div>
-        <div class="glass rounded-2xl p-4 border border-white/10 text-xs text-white/70 overflow-auto">
-          <div><b>Required tables:</b> <code>collections</code>, <code>collection_items</code> (with <code>user_id</code> uuid).</div>
-        </div>
-      </div>
-    `);
-    document.getElementById("mClose").addEventListener("click", closeModal);
-    return;
-  }
-
-  const { data: cols, error } = await supabase
-    .from("collections")
-    .select("*")
-    .order("created_at", { ascending: false });
-
-  if (error) {
-    console.error(error);
-    showToast("Failed to load collections");
-    return;
-  }
-
-  const listHtml = (cols || []).map(c => `
-    <div class="glass rounded-2xl p-3 border border-white/10 flex items-center justify-between gap-3">
-      <div class="min-w-0">
-        <div class="font-semibold truncate">${esc(c.name)}</div>
-      </div>
-      <div class="flex items-center gap-2">
-        <button class="btn chip rounded-2xl px-3 py-1.5 text-sm" data-view="${c.id}">View</button>
-      </div>
-    </div>
-  `).join("") || `<div class="text-sm text-white/70">No collections yet.</div>`;
-
-  openModal(`
-    <div class="space-y-4">
-      <div class="flex items-center justify-between">
-        <div class="text-lg font-semibold">Collections</div>
-        <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
-      </div>
-
-      <div class="glass rounded-2xl p-4 border border-white/10 space-y-2">
-        <div class="text-sm text-white/70">Create a collection</div>
-        <div class="flex gap-2">
-          <input id="newColName" class="flex-1 rounded-2xl px-3 py-2 input" placeholder="Collection name" />
-          <button id="createColBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">Create</button>
-        </div>
-      </div>
-
-      <div class="space-y-2">
-        ${listHtml}
-      </div>
-    </div>
-  `);
-
-  document.getElementById("mClose").addEventListener("click", closeModal);
-
-  document.getElementById("createColBtn").addEventListener("click", async () => {
-    const name = (document.getElementById("newColName").value || "").trim();
-    if (!name) { showToast("Name required"); return; }
-
-    const { error: e2 } = await supabase
-      .from("collections")
-      .insert({ user_id: sessionUser.id, name });
-
-    if (e2) { console.error(e2); showToast("Create failed"); return; }
-    showToast("Created");
-    closeModal();
-    openCollectionsManager();
-  });
-
-  // View: show items in that collection
-  [...document.querySelectorAll("[data-view]")].forEach(btn => {
-    btn.addEventListener("click", async () => {
-      const colId = btn.getAttribute("data-view");
-      const { data: items, error: e3 } = await supabase
-        .from("collection_items")
-        .select("media_item_id")
-        .eq("collection_id", colId);
-
-      if (e3) { console.error(e3); showToast("Failed to load collection"); return; }
-
-      const ids = new Set((items || []).map(x => x.media_item_id));
-      const filtered = (library || []).filter(r => ids.has(r.id));
-
-      openModal(`
-        <div class="space-y-4">
-          <div class="flex items-center justify-between">
-            <div class="text-lg font-semibold">Collection items</div>
-            <button id="mClose2" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
-          </div>
-          <div class="text-sm text-white/70">${filtered.length} item(s)</div>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-            ${filtered.map(r => `
-              <div class="glass rounded-2xl overflow-hidden border border-white/10">
-                <div class="aspect-[2/3] bg-black/25">
-                  ${r.poster_url ? `<img src="${esc(r.poster_url)}" class="w-full h-full object-cover" loading="lazy" />` : `<div class="w-full h-full flex items-center justify-center text-3xl">🎬</div>`}
-                </div>
-                <div class="p-2 text-sm truncate">${esc(r.title)}</div>
-              </div>
-            `).join("")}
-          </div>
-        </div>
-      `);
-      document.getElementById("mClose2").addEventListener("click", closeModal);
-    });
-  });
-}
   function imgUrl(path, size="w500") {
     if (!path) return null;
     if (size === "orig") return `${TMDB_IMG_ORIG}${path}`;
@@ -245,46 +111,19 @@ async function openCollectionsManager() {
     return false;
   }
 
-  // ---- Supabase client (defensive init + logging)
-  let supabase = null;
-  try {
-    const sbGlobal = window.supabase || globalThis.supabase;
-    if (!sbGlobal || !sbGlobal.createClient) {
-      console.error("Supabase SDK not found on window or globalThis:", sbGlobal);
-    } else {
-      supabase = sbGlobal.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true
-        }
-      });
-      console.log("Supabase client initialized", supabase ? true : false);
+  // ---- Supabase client
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
     }
-  } catch (e) {
-    console.error("Error initializing Supabase client:", e);
-  }
-
-  // Ensure `supabase` variable exists to avoid runtime errors later.
-  if (!supabase) {
-    // Create a minimal stub to avoid crashes; real auth will fail until SDK loads.
-    supabase = {
-      auth: {
-        async getSession() { return { data: { session: null } }; },
-        async signInWithPassword() { return { error: new Error('Supabase SDK not loaded') }; },
-        async signUp() { return { error: new Error('Supabase SDK not loaded') }; },
-        async signOut() { return; },
-        onAuthStateChange() { return { data: null }; }
-      },
-      from() { return { select: async () => ({ data: null, error: new Error('Supabase SDK not loaded') }) }; }
-    };
-  }
+  });
 
   // ---- State
   let sessionUser = null;
   let library = [];
   let searchType = "all";
-  let viewMode = localStorage.getItem('nv_viewMode') || 'grid';
 
   // ---- TMDB
   async function tmdbFetch(url) {
@@ -457,13 +296,7 @@ async function openCollectionsManager() {
     return scopeOk && typeOk && formatOk && ratingOk && searchOk;
   }
 
-  function toTime(v){
-  if (!v) return 0;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? t : 0;
-}
-
-function sortLibraryRows(rows) {
+  function sortLibraryRows(rows) {
     const mode = (sortBy?.value || "added_desc");
     const parseYear = (y) => {
       const n = parseInt((y||"").toString().slice(0,4), 10);
@@ -483,7 +316,7 @@ function sortLibraryRows(rows) {
     const out = [...rows];
     out.sort((a,b) => {
       switch(mode) {
-        case "added_asc": return toTime(a.created_at) - toTime(b.created_at);
+        case "added_asc": return (new Date(a.created_at).getTime()||0) - (new Date(b.created_at).getTime()||0);
         case "release_desc": return dateNum(b) - dateNum(a);
         case "release_asc": return dateNum(a) - dateNum(b);
         case "rating_desc": return ratingNum(b) - ratingNum(a);
@@ -496,14 +329,7 @@ function sortLibraryRows(rows) {
     return out;
   }
 
-  
-function applyViewMode(){
-  // update chips
-  btnActive(viewGrid, viewMode === 'grid');
-  btnActive(viewList, viewMode === 'list');
-}
-
-function renderLibrary() {
+  function renderLibrary() {
     const filtered = sortLibraryRows((library||[]).filter(libraryFiltersMatch));
     if (statsText) statsText.textContent = `${filtered.length} item${filtered.length===1?"":"s"} (of ${library.length})`;
 
@@ -601,9 +427,8 @@ function renderLibrary() {
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating</label>
-                <input id="eRating" type="range" min="0" max="10" step="0.5" value=${row.rating ?? ""}" class="mt-1 w-full input" />
-                <div id="eRatingStars" class="mt-1 text-sm text-white/80"></div>
+                <label class="text-xs text-white/70">Rating (0-10)</label>
+                <input id="eRating" type="number" min="0" max="10" step="0.5" value="${row.rating ?? ""}" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry</label>
@@ -616,16 +441,8 @@ function renderLibrary() {
               <textarea id="eComment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="Add your notes…">${esc(row.comment || "")}</textarea>
             </div>
 
-            <div class="glass rounded-2xl p-4 border border-white/10">
-  <div class="flex items-center justify-between">
-    <div class="text-sm text-white/70">Collections</div>
-    <button id="manageColsBtn" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Manage</button>
-  </div>
-  <div id="colAssign" class="mt-3 text-sm text-white/70">Loading…</div>
-</div>
-
-<div class="flex flex-col md:flex-row gap-2">
-  <button id="saveBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+            <div class="flex flex-col md:flex-row gap-2">
+              <button id="saveBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
                 Save changes
               </button>
               <button id="delBtn" class="btn rounded-2xl px-4 py-2 bg-red-500/15 hover:bg-red-500/20 border border-red-400/20">
@@ -641,57 +458,7 @@ function renderLibrary() {
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
-async function loadCollectionsForItem(mediaItemId){
-  const colAssign = document.getElementById("colAssign");
-  const manageBtn = document.getElementById("manageColsBtn");
-  manageBtn?.addEventListener("click", () => openCollectionsManager());
-
-  try{
-    const { data: cols, error: e1 } = await supabase.from("collections").select("id,name").order("created_at",{ascending:false});
-    if (e1) throw e1;
-    const { data: links, error: e2 } = await supabase.from("collection_items").select("collection_id").eq("media_item_id", mediaItemId);
-    if (e2) throw e2;
-    const set = new Set((links||[]).map(x=>x.collection_id));
-    if (!cols || cols.length===0){
-      colAssign.innerHTML = '<div class="text-white/60 text-sm">No collections yet. Click “Manage” to create one.</div>';
-      return;
-    }
-    colAssign.innerHTML = cols.map(c => `
-      <label class="flex items-center gap-2 py-1">
-        <input type="checkbox" data-colid="${c.id}" ${set.has(c.id) ? "checked" : ""} />
-        <span>${esc(c.name)}</span>
-      </label>
-    `).join("");
-
-    [...colAssign.querySelectorAll("input[type=checkbox][data-colid]")].forEach(cb => {
-      cb.addEventListener("change", async () => {
-        const colId = cb.getAttribute("data-colid");
-        if (cb.checked){
-          const { error } = await supabase.from("collection_items").insert({ user_id: sessionUser.id, collection_id: colId, media_item_id: mediaItemId });
-          if (error){ console.error(error); showToast("Add to collection failed"); cb.checked=false; }
-        } else {
-          const { error } = await supabase.from("collection_items").delete().eq("collection_id", colId).eq("media_item_id", mediaItemId);
-          if (error){ console.error(error); showToast("Remove failed"); cb.checked=true; }
-        }
-      });
-    });
-  } catch (e){
-    console.warn("Collections not available:", e);
-    colAssign.innerHTML = '<div class="text-white/60 text-sm">Collections not set up yet.</div>';
-  }
-}
-
-loadCollectionsForItem(row.id);
-
-    const eRatingEl = document.getElementById("eRating");
-const eRatingStarsEl = document.getElementById("eRatingStars");
-if (eRatingEl && eRatingStarsEl) {
-  const upd = () => eRatingStarsEl.textContent = starsFromRating(eRatingEl.value);
-  upd();
-  eRatingEl.addEventListener("input", upd);
-}
-
-document.getElementById("saveBtn").addEventListener("click", async () => {
+    document.getElementById("saveBtn").addEventListener("click", async () => {
       const format = document.getElementById("eFormat").value;
       const ratingRaw = document.getElementById("eRating").value;
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
@@ -804,9 +571,8 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating</label>
-                <input id="rating" type="range" min="0" max="10" step="0.5" value="0" class="mt-1 w-full input" />
-                <div id="ratingStars" class="mt-1 text-sm text-white/80"></div>
+                <label class="text-xs text-white/70">Rating (0-10)</label>
+                <input id="rating" type="number" min="0" max="10" step="0.5" value="" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry</label>
@@ -835,48 +601,6 @@ document.getElementById("saveBtn").addEventListener("click", async () => {
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
-async function loadCollectionsForItem(mediaItemId){
-  const colAssign = document.getElementById("colAssign");
-  const manageBtn = document.getElementById("manageColsBtn");
-  manageBtn?.addEventListener("click", () => openCollectionsManager());
-
-  try{
-    const { data: cols, error: e1 } = await supabase.from("collections").select("id,name").order("created_at",{ascending:false});
-    if (e1) throw e1;
-    const { data: links, error: e2 } = await supabase.from("collection_items").select("collection_id").eq("media_item_id", mediaItemId);
-    if (e2) throw e2;
-    const set = new Set((links||[]).map(x=>x.collection_id));
-    if (!cols || cols.length===0){
-      colAssign.innerHTML = '<div class="text-white/60 text-sm">No collections yet. Click “Manage” to create one.</div>';
-      return;
-    }
-    colAssign.innerHTML = cols.map(c => `
-      <label class="flex items-center gap-2 py-1">
-        <input type="checkbox" data-colid="${c.id}" ${set.has(c.id) ? "checked" : ""} />
-        <span>${esc(c.name)}</span>
-      </label>
-    `).join("");
-
-    [...colAssign.querySelectorAll("input[type=checkbox][data-colid]")].forEach(cb => {
-      cb.addEventListener("change", async () => {
-        const colId = cb.getAttribute("data-colid");
-        if (cb.checked){
-          const { error } = await supabase.from("collection_items").insert({ user_id: sessionUser.id, collection_id: colId, media_item_id: mediaItemId });
-          if (error){ console.error(error); showToast("Add to collection failed"); cb.checked=false; }
-        } else {
-          const { error } = await supabase.from("collection_items").delete().eq("collection_id", colId).eq("media_item_id", mediaItemId);
-          if (error){ console.error(error); showToast("Remove failed"); cb.checked=true; }
-        }
-      });
-    });
-  } catch (e){
-    console.warn("Collections not available:", e);
-    colAssign.innerHTML = '<div class="text-white/60 text-sm">Collections not set up yet.</div>';
-  }
-}
-
-loadCollectionsForItem(row.id);
-
     const buildCommon = () => {
       const format = document.getElementById("format").value;
       const ratingRaw = document.getElementById("rating").value;
@@ -886,15 +610,7 @@ loadCollectionsForItem(row.id);
       return { format, rating, comment, releasePart };
     };
 
-    const ratingEl = document.getElementById("rating");
-const ratingStarsEl = document.getElementById("ratingStars");
-if (ratingEl && ratingStarsEl) {
-  const upd = () => ratingStarsEl.textContent = starsFromRating(ratingEl.value);
-  upd();
-  ratingEl.addEventListener("input", upd);
-}
-
-document.getElementById("saveTitleBtn").addEventListener("click", async () => {
+    document.getElementById("saveTitleBtn").addEventListener("click", async () => {
       const { format, rating, comment, releasePart } = buildCommon();
       const payload = {
         user_id: sessionUser.id,
@@ -917,7 +633,7 @@ document.getElementById("saveTitleBtn").addEventListener("click", async () => {
         runtime: d.runtime
       };
       const ok = await upsertItem(payload);
-      if (ok) { closeModal(); if (searchInput) searchInput.value=''; searchResults?.classList.add('hidden'); }
+      if (ok) closeModal();
     });
 
     if (d.media_type === "tv") {
@@ -1059,10 +775,6 @@ document.getElementById("saveTitleBtn").addEventListener("click", async () => {
   typeTv?.addEventListener("click", () => setSearchType("tv"));
   setSearchType("all");
 
-  viewGrid?.addEventListener('click', () => { viewMode='grid'; localStorage.setItem('nv_viewMode', viewMode); applyViewMode(); renderLibrary(); });
-  viewList?.addEventListener('click', () => { viewMode='list'; localStorage.setItem('nv_viewMode', viewMode); applyViewMode(); renderLibrary(); });
-  applyViewMode();
-
   async function doSearch() {
     const q = (searchInput?.value || "").trim();
     if (!q) return;
@@ -1196,13 +908,7 @@ document.getElementById("saveTitleBtn").addEventListener("click", async () => {
   document.addEventListener("click", (e) => {
     if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) closeProfileMenu();
   });
-  
-profileCollections?.addEventListener("click", async () => {
-  closeProfileMenu();
-  await openCollectionsManager();
-});
-
-profileLogout?.addEventListener("click", async () => {
+  profileLogout?.addEventListener("click", async () => {
     closeProfileMenu();
     await supabase.auth.signOut();
     showToast("Logged out");
@@ -1227,13 +933,4 @@ profileLogout?.addEventListener("click", async () => {
 
   // Boot
   refreshSessionUI(0);
-})();function wireLibraryFilters(){
-  const els = [filterScope, filterMediaType, filterFormat, sortBy, minRating].filter(Boolean);
-  els.forEach(el => el.addEventListener('change', () => renderLibrary()));
-  librarySearch?.addEventListener('input', () => renderLibrary());
-
-  const fd = document.getElementById('filtersDetails');
-  if (fd && window.matchMedia('(min-width: 768px)').matches) fd.setAttribute('open','open');
-}
-wireLibraryFilters();
-  
+})();
