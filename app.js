@@ -8,9 +8,6 @@
   // =========================
   // ✅ CONFIG (EDIT THESE)
   // =========================
-  // If you added a `release_date` column (text or date) to media_items, set true to store full dates.
-  const USE_RELEASE_DATE_COLUMN = false;
-
   const SUPABASE_URL = "https://zmljybyharvunwctxbwp.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptbGp5YnloYXJ2dW53Y3R4YndwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4MDQ5NDgsImV4cCI6MjA4MzM4MDk0OH0.h6TW7xX4B4y8D-yBL6-WqnhYWo0MqFAAP14lzXmXyrg";
   const TMDB_API_KEY = "cc4e1c1296a271801dd38dd0c5742ec3";
@@ -28,7 +25,12 @@
   const authMsg = document.getElementById("authMsg");
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
-const typeAll = document.getElementById("typeAll");
+
+  const userPill = document.getElementById("userPill");
+  const userEmail = document.getElementById("userEmail");
+  const logoutBtn = document.getElementById("logoutBtn");
+
+  const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
   const typeTv = document.getElementById("typeTv");
   const searchInput = document.getElementById("searchInput");
@@ -38,9 +40,6 @@ const typeAll = document.getElementById("typeAll");
   const filterScope = document.getElementById("filterScope");
   const filterMediaType = document.getElementById("filterMediaType");
   const filterFormat = document.getElementById("filterFormat");
-  const librarySearch = document.getElementById("librarySearch");
-  const sortBy = document.getElementById("sortBy");
-  const minRating = document.getElementById("minRating");
   const statsText = document.getElementById("statsText");
 
   const grid = document.getElementById("grid");
@@ -58,7 +57,9 @@ const typeAll = document.getElementById("typeAll");
 
   // App state
   let sessionUser = null;
-  let library = []; // rows from Supabase
+  let library = [];
+  let collections = [];
+  let activeCollectionId = "all"; // rows from Supabase
   let searchType = "all"; // all | movie | tv
 
   // =========================
@@ -78,63 +79,6 @@ const typeAll = document.getElementById("typeAll");
     toast.querySelector("div").textContent = message;
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
-
-
-  function getCollectionsSQL() {
-    return `-- Create Collections tables (run in Supabase SQL Editor)
-create table if not exists public.collections (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
-  name text not null,
-  created_at timestamptz not null default now()
-);
-
-create table if not exists public.collection_items (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null,
-  collection_id uuid not null references public.collections(id) on delete cascade,
-  media_item_id bigint not null references public.media_items(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (user_id, collection_id, media_item_id)
-);
-
-alter table public.collections enable row level security;
-alter table public.collection_items enable row level security;
-
-drop policy if exists "collections_select_own" on public.collections;
-create policy "collections_select_own" on public.collections
-for select using (auth.uid() = user_id);
-
-drop policy if exists "collections_insert_own" on public.collections;
-create policy "collections_insert_own" on public.collections
-for insert with check (auth.uid() = user_id);
-
-drop policy if exists "collections_update_own" on public.collections;
-create policy "collections_update_own" on public.collections
-for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
-
-drop policy if exists "collections_delete_own" on public.collections;
-create policy "collections_delete_own" on public.collections
-for delete using (auth.uid() = user_id);
-
-drop policy if exists "collection_items_select_own" on public.collection_items;
-create policy "collection_items_select_own" on public.collection_items
-for select using (auth.uid() = user_id);
-
-drop policy if exists "collection_items_insert_own" on public.collection_items;
-create policy "collection_items_insert_own" on public.collection_items
-for insert with check (auth.uid() = user_id);
-
-drop policy if exists "collection_items_delete_own" on public.collection_items;
-create policy "collection_items_delete_own" on public.collection_items
-for delete using (auth.uid() = user_id);
-`.trim();
-  }
-
-// Profile menu (mobile-friendly)
-function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
-function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
-
 
   function openModal(html) {
     modalBody.innerHTML = html;
@@ -204,7 +148,6 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
 
     return {
       tmdb_id: d.id,
-      release_date_full: (media_type === "movie" ? (d.release_date || "") : (d.first_air_date || "")),
       media_type,
       title: media_type === "movie" ? d.title : d.name,
       year: (media_type === "movie" ? d.release_date : d.first_air_date || "").split("-")[0] || "",
@@ -262,7 +205,6 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
       return false;
     }
     await loadLibrary();
-    updateCollectionFilterOptions();
     showToast("Saved");
     return true;
   }
@@ -275,7 +217,6 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
       return false;
     }
     await loadLibrary();
-    updateCollectionFilterOptions();
     showToast("Removed");
     return true;
   }
@@ -321,83 +262,14 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
   }
 
   function libraryFiltersMatch(row) {
-  const scopeOk = filterScope.value === "all" || row.scope === filterScope.value;
-  const typeOk = filterMediaType.value === "all" || row.media_type === filterMediaType.value;
-  const formatOk = filterFormat.value === "all" || (row.format || "Digital") === filterFormat.value;
-
-  const minR = Number(minRating?.value || 0);
-  const ratingVal = row.rating === null || row.rating === undefined || row.rating === "" ? null : Number(row.rating);
-  const ratingOk = minR === 0 || (ratingVal !== null && ratingVal >= minR);
-
-  const q = (librarySearch?.value || "").trim().toLowerCase();
-  const searchOk = !q || [
-    row.title,
-    row.comment,
-    row.genre,
-    row.cast_list,
-    row.overview,
-    row.year,
-    row.format
-  ].some(v => (v || "").toString().toLowerCase().includes(q));
-
-  
-    const colVal = (filterCollection?.value || currentCollectionFilter || "all");
-    currentCollectionFilter = colVal;
-    let collectionOk = true;
-    if (colVal !== "all" && collectionsEnabled) {
-      // item is in collection if mapping exists
-      collectionOk = (collectionItems || []).some(ci => ci.collection_id == colVal && ci.media_item_id == row.id);
-    }
-    return (scopeOk && typeOk && formatOk && ratingOk && searchOk) && collectionOk;
+    const scopeOk = filterScope.value === "all" || row.scope === filterScope.value;
+    const typeOk = filterMediaType.value === "all" || row.media_type === filterMediaType.value;
+    const formatOk = filterFormat.value === "all" || (row.format || "Digital") === filterFormat.value;
+    return scopeOk && typeOk && formatOk;
   }
 
-
-function toTime(v) {
-    if (!v) return 0;
-    const t = Date.parse(v);
-    return Number.isFinite(t) ? t : 0;
-  }
-
-  function sortLibraryRows(rows) {
-  const mode = (sortBy?.value || "added_desc");
-
-  const toNumYear = (y) => {
-    const n = parseInt((y || "").toString().slice(0,4), 10);
-    return Number.isFinite(n) ? n : 0;
-  };
-  const toDateNum = (r) => {
-    // if release_date exists and is YYYY-MM-DD
-    const d = (r.release_date || "").toString();
-    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return Date.parse(d) || 0;
-    // fallback: year only
-    return toNumYear(r.year) * 365 * 24 * 3600 * 1000;
-  };
-  const ratingNum = (r) => {
-    const v = r.rating;
-    if (v === null || v === undefined || v === "") return -1;
-    const n = Number(v);
-    return Number.isFinite(n) ? n : -1;
-  };
-
-  const coll = [...rows];
-  coll.sort((a,b) => {
-    switch (mode) {
-      case "added_asc": return toTime(a.created_at) - toTime(b.created_at);
-      case "release_desc": return toDateNum(b) - toDateNum(a);
-      case "release_asc": return toDateNum(a) - toDateNum(b);
-      case "rating_desc": return ratingNum(b) - ratingNum(a);
-      case "rating_asc": return ratingNum(a) - ratingNum(b);
-      case "title_asc": return (a.title||"").localeCompare(b.title||"");
-      case "title_desc": return (b.title||"").localeCompare(a.title||"");
-      case "added_desc":
-      default: return toTime(b.created_at) - toTime(a.created_at);
-    }
-  });
-  return coll;
-}
-
-function renderLibrary() {
-    const filtered = sortLibraryRows(library.filter(libraryFiltersMatch));
+  function renderLibrary() {
+    const filtered = library.filter(libraryFiltersMatch);
 
     statsText.textContent = `${filtered.length} item${filtered.length === 1 ? "" : "s"} (of ${library.length})`;
 
@@ -592,7 +464,6 @@ function renderLibrary() {
         year: d.year,
         poster_url: d.poster_url || null,
         backdrop_url: d.backdrop_url || null,
-        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
         format,
         rating,
         comment,
@@ -686,8 +557,7 @@ function renderLibrary() {
             year: d.year,
             poster_url: d.poster_url || null,
             backdrop_url: d.backdrop_url || null,
-        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
-        format,
+            format,
             rating,
             comment,
             genre: d.genre,
@@ -719,8 +589,7 @@ function renderLibrary() {
               year: d.year,
               poster_url: d.poster_url || null,
               backdrop_url: d.backdrop_url || null,
-        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
-        format,
+              format,
               rating,
               comment,
               genre: d.genre,
@@ -834,35 +703,27 @@ function renderLibrary() {
   // =========================
   // Auth
   // =========================
-  async function refreshSessionUI() {
-    let data;
-    try {
-      ({ data } = await supabase.auth.getSession());
-    } catch (e) {
-      console.error(e);
-      showToast("Auth error");
-      data = { session: null };
-    }
+  async async function refreshSessionUI() {
+    const { data } = await supabase.auth.getSession();
     sessionUser = data.session?.user || null;
 
     if (!sessionUser) {
       authPanel.classList.remove("hidden");
       appPanel.classList.add("hidden");
-      profileBtn?.classList.add("hidden");
-      closeProfileMenu();
+      userPill.classList.add("hidden");
+      logoutBtn.classList.add("hidden");
       return;
     }
 
     authPanel.classList.add("hidden");
     appPanel.classList.remove("hidden");
-    profileBtn?.classList.remove("hidden");
-    if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
-    closeProfileMenu();
+    userPill.classList.remove("hidden");
+    logoutBtn.classList.remove("hidden");
+    userEmail.textContent = sessionUser.email || "Signed in";
     await loadLibrary();
-    updateCollectionFilterOptions();
   }
 
-  signInBtn?.addEventListener("click", async () => {
+  signInBtn.addEventListener("click", async () => {
     authMsg.textContent = "";
     const email = authEmail.value.trim();
     const password = authPassword.value;
@@ -876,7 +737,7 @@ function renderLibrary() {
     await refreshSessionUI();
   });
 
-  signUpBtn?.addEventListener("click", async () => {
+  signUpBtn.addEventListener("click", async () => {
     authMsg.textContent = "";
     const email = authEmail.value.trim();
     const password = authPassword.value;
@@ -890,30 +751,15 @@ function renderLibrary() {
     await refreshSessionUI();
   });
 
-  showToast("Logged out");
+  logoutBtn.addEventListener("click", async () => {
+    await supabase.auth.signOut();
+    showToast("Logged out");
     await refreshSessionUI();
   });
 
-// Profile interactions
-profileBtn?.addEventListener("click", (e) => {
-  e.stopPropagation();
-  toggleProfileMenu();
-});
-
-document.addEventListener("click", (e) => {
-  if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) closeProfileMenu();
-});
-
-profileLogout?.addEventListener("click", async () => {
-  closeProfileMenu();
-  await supabase.auth.signOut();
-  showToast("Logged out");
-  await refreshSessionUI();
-});
-
-supabase.auth.onAuthStateChange(() => {
-  refreshSessionUI();
-});
+  supabase.auth.onAuthStateChange(() => {
+    refreshSessionUI();
+  });
 
   // =========================
   // Search + buttons
@@ -956,8 +802,141 @@ supabase.auth.onAuthStateChange(() => {
     }
   });
 
+  // Filters re-render
+  [filterScope, filterMediaType, filterFormat].forEach(el => el.addEventListener("change", renderLibrary));
+
   // =========================
   // Boot
   // =========================
   refreshSessionUI();
 })();
+// =========================
+// Collections
+// =========================
+async function ensureCollectionsTables() {
+  // quick check: try selecting 1 row from collections
+  const { error } = await supabase.from("collections").select("id").limit(1);
+  if (!error) return true;
+  console.warn("Collections not available:", error?.message || error);
+  return false;
+}
+
+async function loadCollections() {
+  const ok = await ensureCollectionsTables();
+  if (!ok) {
+    collections = [];
+    return false;
+  }
+  const { data, error } = await supabase
+    .from("collections")
+    .select("id,name,created_at")
+    .eq("user_id", sessionUser.id)
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error(error);
+    collections = [];
+    return false;
+  }
+  collections = data || [];
+  return true;
+}
+
+async function createCollection(name) {
+  const { data, error } = await supabase
+    .from("collections")
+    .insert({ user_id: sessionUser.id, name })
+    .select("id,name,created_at")
+    .single();
+  if (error) {
+    console.error(error);
+    showToast("Create collection failed");
+    return null;
+  }
+  return data;
+}
+
+async function openCollectionsModal() {
+  if (!sessionUser) return;
+
+  const hasTables = await ensureCollectionsTables();
+  if (!hasTables) {
+    openModal(`
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="text-xl font-semibold">Collections</div>
+          <button id="cClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+        </div>
+        <div class="text-sm text-white/70">
+          Collections tables are not set up in Supabase yet.
+        </div>
+        <div class="glass rounded-2xl p-4 border border-white/10 text-sm">
+          Run the <b>supabase_collections.sql</b> file in Supabase SQL Editor, then refresh the site.
+        </div>
+      </div>
+    `);
+    document.getElementById("cClose").addEventListener("click", closeModal);
+    return;
+  }
+
+  // collections load is on-demand
+    
+
+  openModal(`
+    <div class="space-y-5">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-xs uppercase tracking-[0.25em] text-white/60">Library</div>
+          <div class="text-2xl font-semibold">Collections</div>
+        </div>
+        <button id="cClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+      </div>
+
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="text-sm text-white/70 mb-2">Create a new collection</div>
+        <div class="flex flex-col md:flex-row gap-2">
+          <input id="newColName" class="flex-1 rounded-2xl px-4 py-3 input" placeholder="Collection name (e.g., Marvel, Favorites, 4K)" />
+          <button id="createColBtn" class="btn rounded-2xl px-4 py-3 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+            Create
+          </button>
+        </div>
+        <div id="colMsg" class="text-sm text-white/70 mt-2"></div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="flex items-center justify-between">
+          <div class="font-semibold">Your collections</div>
+          <div class="text-xs text-white/60">${collections.length} total</div>
+        </div>
+        <div class="mt-3 space-y-2" id="colList">
+          ${collections.length ? collections.map(c => `
+            <div class="flex items-center gap-2 p-3 rounded-2xl border border-white/10 bg-white/5">
+              <div class="flex-1 min-w-0">
+                <div class="font-semibold truncate">${esc(c.name)}</div>
+              </div>
+            </div>
+          `).join("") : `<div class="text-sm text-white/70">No collections yet.</div>`}
+        </div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById("cClose").addEventListener("click", closeModal);
+
+  document.getElementById("createColBtn").addEventListener("click", async () => {
+    const name = document.getElementById("newColName").value.trim();
+    const msg = document.getElementById("colMsg");
+    msg.textContent = "";
+    if (!name) {
+      msg.textContent = "Enter a name.";
+      return;
+    }
+    const created = await createCollection(name);
+    if (!created) return;
+    showToast("Collection created");
+    await loadCollections();
+    closeModal();
+    // reopen to refresh list
+    openCollectionsModal();
+  });
+}
+
