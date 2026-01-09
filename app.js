@@ -8,6 +8,9 @@
   // =========================
   // ✅ CONFIG (EDIT THESE)
   // =========================
+  // If you added a `release_date` column (text or date) to media_items, set true to store full dates.
+  const USE_RELEASE_DATE_COLUMN = false;
+
   const SUPABASE_URL = "https://zmljybyharvunwctxbwp.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptbGp5YnloYXJ2dW53Y3R4YndwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4MDQ5NDgsImV4cCI6MjA4MzM4MDk0OH0.h6TW7xX4B4y8D-yBL6-WqnhYWo0MqFAAP14lzXmXyrg";
   const TMDB_API_KEY = "cc4e1c1296a271801dd38dd0c5742ec3";
@@ -25,11 +28,6 @@
   const authMsg = document.getElementById("authMsg");
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
-
-  const profileBtn = document.getElementById("profileBtn");
-  const profileMenu = document.getElementById("profileMenu");
-  const profileEmail = document.getElementById("profileEmail");
-  const profileLogout = document.getElementById("profileLogout");
 const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
   const typeTv = document.getElementById("typeTv");
@@ -40,6 +38,9 @@ const typeAll = document.getElementById("typeAll");
   const filterScope = document.getElementById("filterScope");
   const filterMediaType = document.getElementById("filterMediaType");
   const filterFormat = document.getElementById("filterFormat");
+  const librarySearch = document.getElementById("librarySearch");
+  const sortBy = document.getElementById("sortBy");
+  const minRating = document.getElementById("minRating");
   const statsText = document.getElementById("statsText");
 
   const grid = document.getElementById("grid");
@@ -78,11 +79,10 @@ const typeAll = document.getElementById("typeAll");
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
-
-// Profile menu helpers
-function openProfileMenu() { profileMenu?.classList.remove("hidden"); }
+// Profile menu (mobile-friendly)
 function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
 function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
+
 
   function openModal(html) {
     modalBody.innerHTML = html;
@@ -152,6 +152,7 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
 
     return {
       tmdb_id: d.id,
+      release_date_full: (media_type === "movie" ? (d.release_date || "") : (d.first_air_date || "")),
       media_type,
       title: media_type === "movie" ? d.title : d.name,
       year: (media_type === "movie" ? d.release_date : d.first_air_date || "").split("-")[0] || "",
@@ -266,14 +267,69 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
   }
 
   function libraryFiltersMatch(row) {
-    const scopeOk = filterScope.value === "all" || row.scope === filterScope.value;
-    const typeOk = filterMediaType.value === "all" || row.media_type === filterMediaType.value;
-    const formatOk = filterFormat.value === "all" || (row.format || "Digital") === filterFormat.value;
-    return scopeOk && typeOk && formatOk;
-  }
+  const scopeOk = filterScope.value === "all" || row.scope === filterScope.value;
+  const typeOk = filterMediaType.value === "all" || row.media_type === filterMediaType.value;
+  const formatOk = filterFormat.value === "all" || (row.format || "Digital") === filterFormat.value;
 
-  function renderLibrary() {
-    const filtered = library.filter(libraryFiltersMatch);
+  const minR = Number(minRating?.value || 0);
+  const ratingVal = row.rating === null || row.rating === undefined || row.rating === "" ? null : Number(row.rating);
+  const ratingOk = minR === 0 || (ratingVal !== null && ratingVal >= minR);
+
+  const q = (librarySearch?.value || "").trim().toLowerCase();
+  const searchOk = !q || [
+    row.title,
+    row.comment,
+    row.genre,
+    row.cast_list,
+    row.overview,
+    row.year,
+    row.format
+  ].some(v => (v || "").toString().toLowerCase().includes(q));
+
+  return scopeOk && typeOk && formatOk && ratingOk && searchOk;
+}
+
+
+function sortLibraryRows(rows) {
+  const mode = (sortBy?.value || "added_desc");
+
+  const toNumYear = (y) => {
+    const n = parseInt((y || "").toString().slice(0,4), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const toDateNum = (r) => {
+    // if release_date exists and is YYYY-MM-DD
+    const d = (r.release_date || "").toString();
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return Date.parse(d) || 0;
+    // fallback: year only
+    return toNumYear(r.year) * 365 * 24 * 3600 * 1000;
+  };
+  const ratingNum = (r) => {
+    const v = r.rating;
+    if (v === null || v === undefined || v === "") return -1;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : -1;
+  };
+
+  const coll = [...rows];
+  coll.sort((a,b) => {
+    switch (mode) {
+      case "added_asc": return (new Date(a.created_at).getTime()||0) - (new Date(b.created_at).getTime()||0);
+      case "release_desc": return toDateNum(b) - toDateNum(a);
+      case "release_asc": return toDateNum(a) - toDateNum(b);
+      case "rating_desc": return ratingNum(b) - ratingNum(a);
+      case "rating_asc": return ratingNum(a) - ratingNum(b);
+      case "title_asc": return (a.title||"").localeCompare(b.title||"");
+      case "title_desc": return (b.title||"").localeCompare(a.title||"");
+      case "added_desc":
+      default: return (new Date(b.created_at).getTime()||0) - (new Date(a.created_at).getTime()||0);
+    }
+  });
+  return coll;
+}
+
+function renderLibrary() {
+    const filtered = sortLibraryRows(library.filter(libraryFiltersMatch));
 
     statsText.textContent = `${filtered.length} item${filtered.length === 1 ? "" : "s"} (of ${library.length})`;
 
@@ -424,7 +480,7 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
                   class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
-                <label class="text-xs text-white/70">Entry type</label>
+                <label class="text-xs text-white/70">Scope</label>
                 <select id="scope" class="mt-1 w-full rounded-2xl px-3 py-2 input">
                   <option value="title" selected>${d.media_type === "tv" ? "Series" : "Movie"}</option>
                 </select>
@@ -468,11 +524,12 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
         year: d.year,
         poster_url: d.poster_url || null,
         backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
         format,
         rating,
         comment,
         genre: d.genre,
-        cast_list: d.cast,
+        cast: d.cast,
         overview: d.overview,
         runtime: d.runtime,
         season_number: null,
@@ -561,11 +618,12 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
             year: d.year,
             poster_url: d.poster_url || null,
             backdrop_url: d.backdrop_url || null,
-            format,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
             rating,
             comment,
             genre: d.genre,
-            cast_list: d.cast,
+            cast: d.cast,
             overview: d.overview,
             runtime: d.runtime,
             season_number,
@@ -593,11 +651,12 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
               year: d.year,
               poster_url: d.poster_url || null,
               backdrop_url: d.backdrop_url || null,
-              format,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
               rating,
               comment,
               genre: d.genre,
-              cast_list: d.cast,
+              cast: d.cast,
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
               season_number,
@@ -660,8 +719,8 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
                   class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
-                <label class="text-xs text-white/70">Entry type</label>
-                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(row.scope === "title" ? (row.media_type === "tv" ? "Series" : "Movie") : (row.scope === "season" ? `Season ${row.season_number}` : `S${row.season_number}E${row.episode_number}`))}" disabled />
+                <label class="text-xs text-white/70">Scope</label>
+                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(row.scope)}" disabled />
               </div>
             </div>
 
@@ -693,21 +752,10 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      const { error } = await supabase
-  .from("media_items")
-  .update({ format, rating, comment })
-  .eq("id", row.id);
-
-if (error) {
-  console.error(error);
-  showToast("Save failed");
-  return;
-}
-
-await loadLibrary();
-showToast("Saved");
-closeModal();
-});
+      const payload = { ...row, format, rating, comment };
+      const ok = await upsertItem(payload);
+      if (ok) closeModal();
+    });
 
     document.getElementById("delBtn").addEventListener("click", async () => {
       await deleteItem(row.id);
@@ -719,7 +767,14 @@ closeModal();
   // Auth
   // =========================
   async function refreshSessionUI() {
-    const { data } = await supabase.auth.getSession();
+    let data;
+    try {
+      ({ data } = await supabase.auth.getSession());
+    } catch (e) {
+      console.error(e);
+      showToast("Auth error");
+      data = { session: null };
+    }
     sessionUser = data.session?.user || null;
 
     if (!sessionUser) {
@@ -736,9 +791,9 @@ closeModal();
     if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
     closeProfileMenu();
     await loadLibrary();
-}
+  }
 
-  signInBtn.addEventListener("click", async () => {
+  signInBtn?.addEventListener("click", async () => {
     authMsg.textContent = "";
     const email = authEmail.value.trim();
     const password = authPassword.value;
@@ -752,7 +807,7 @@ closeModal();
     await refreshSessionUI();
   });
 
-  signUpBtn.addEventListener("click", async () => {
+  signUpBtn?.addEventListener("click", async () => {
     authMsg.textContent = "";
     const email = authEmail.value.trim();
     const password = authPassword.value;
@@ -770,7 +825,7 @@ closeModal();
     await refreshSessionUI();
   });
 
-// Profile menu interactions (safe on pages where header exists)
+// Profile interactions
 profileBtn?.addEventListener("click", (e) => {
   e.stopPropagation();
   toggleProfileMenu();
@@ -791,7 +846,6 @@ supabase.auth.onAuthStateChange(() => {
   refreshSessionUI();
 });
 
-
   // =========================
   // Search + buttons
   // =========================
@@ -801,9 +855,9 @@ supabase.auth.onAuthStateChange(() => {
     btnActive(typeMovie, t === "movie");
     btnActive(typeTv, t === "tv");
   }
-  typeAll?.addEventListener("click", () => setSearchType("all"));
-  typeMovie?.addEventListener("click", () => setSearchType("movie"));
-  typeTv?.addEventListener("click", () => setSearchType("tv"));
+  typeAll.addEventListener("click", () => setSearchType("all"));
+  typeMovie.addEventListener("click", () => setSearchType("movie"));
+  typeTv.addEventListener("click", () => setSearchType("tv"));
   setSearchType("all");
 
   async function doSearch() {
@@ -822,8 +876,8 @@ supabase.auth.onAuthStateChange(() => {
       searchBtn.textContent = "Search";
     }
   }
-  searchBtn?.addEventListener("click", doSearch);
-  searchInput?.addEventListener("keydown", (e) => {
+  searchBtn.addEventListener("click", doSearch);
+  searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") doSearch();
   });
 
@@ -832,9 +886,6 @@ supabase.auth.onAuthStateChange(() => {
       searchResults.classList.add("hidden");
     }
   });
-
-  // Filters re-render
-  [filterScope, filterMediaType, filterFormat].filter(Boolean).forEach(el => el.addEventListener("change", renderLibrary));
 
   // =========================
   // Boot

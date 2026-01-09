@@ -88,32 +88,6 @@
     }
     @keyframes sk{ 0%{background-position: 0% 0} 100%{background-position: 100% 0} }
   
-    /* Mobile + modal scrolling fixes */
-    body.modal-open{
-      overflow: hidden;
-      position: fixed;
-      width: 100%;
-    }
-    #searchResults{
-      max-height: 60vh;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    #modal{
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    #modalPanel{
-      max-height: calc(100vh - 2rem);
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-    @media (max-width: 768px){
-      #modalShell{ align-items: flex-start; }
-      #modalPanel{ max-height: calc(100vh - 1.25rem); }
-    }
-
-  
   /* Profile dropdown mobile tweak */
   @media (max-width: 420px){
     #profileMenu{ width: min(92vw, 20rem); }
@@ -137,28 +111,28 @@
       </div>
 
       <div class="ml-auto relative flex items-center gap-2">
-      <button id="profileBtn" class="hidden btn h-10 w-10 rounded-2xl glass hover:bg-white/10 flex items-center justify-center" aria-label="Profile" type="button">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M20 21a8 8 0 0 0-16 0"/>
-          <circle cx="12" cy="7" r="4"/>
-        </svg>
-      </button>
+  <button id="profileBtn" class="hidden btn h-10 w-10 rounded-2xl glass hover:bg-white/10 flex items-center justify-center" aria-label="Profile menu" type="button">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M20 21a8 8 0 0 0-16 0"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  </button>
 
-      <div id="profileMenu" class="hidden absolute right-0 top-12 w-72 rounded-2xl glass-strong border border-white/15 overflow-hidden">
-        <div class="p-4">
-          <div class="text-xs uppercase tracking-[0.25em] text-white/60">Signed in as</div>
-          <div id="profileEmail" class="mt-1 text-sm text-white/90 break-all">—</div>
-        </div>
-        <div class="border-t soft-divider"></div>
-        <div class="p-2">
-          <button id="profileLogout" class="w-full btn rounded-2xl px-4 py-3 text-left hover:bg-white/10 border border-white/10">
-            Log out
-          </button>
-        </div>
-      </div>
+  <div id="profileMenu" class="hidden absolute right-0 top-12 w-72 rounded-2xl glass-strong border border-white/15 overflow-hidden">
+    <div class="p-4">
+      <div class="text-xs uppercase tracking-[0.25em] text-white/60">Signed in as</div>
+      <div id="profileEmail" class="mt-1 text-sm text-white/90 break-all">—</div>
+    </div>
+    <div class="border-t soft-divider"></div>
+    <div class="p-2">
+      <button id="profileLogout" class="w-full btn rounded-2xl px-4 py-3 text-left hover:bg-white/10 border border-white/10">
+        Log out
+      </button>
     </div>
   </div>
-</header>
+</div>
+    </div>
+  </header>
 
   <main class="mx-auto max-w-6xl px-4 py-8">
     <!-- AUTH -->
@@ -256,6 +230,30 @@
             <option value="4K Ultra HD">4K Ultra HD</option>
             <option value="VHS">VHS</option>
           </select>
+          <input id="librarySearch" placeholder="Search your library…" class="rounded-xl px-3 py-2 input w-full md:w-56" />
+          <select id="sortBy" class="rounded-xl px-3 py-2 input">
+            <option value="added_desc">Added: newest</option>
+            <option value="added_asc">Added: oldest</option>
+            <option value="release_desc">Release: newest</option>
+            <option value="release_asc">Release: oldest</option>
+            <option value="rating_desc">Rating: high → low</option>
+            <option value="rating_asc">Rating: low → high</option>
+            <option value="title_asc">Title: A → Z</option>
+            <option value="title_desc">Title: Z → A</option>
+          </select>
+          <select id="minRating" class="rounded-xl px-3 py-2 input">
+            <option value="0">Any rating</option>
+            <option value="10">10+</option>
+            <option value="9">9+</option>
+            <option value="8">8+</option>
+            <option value="7">7+</option>
+            <option value="6">6+</option>
+            <option value="5">5+</option>
+            <option value="4">4+</option>
+            <option value="3">3+</option>
+            <option value="2">2+</option>
+            <option value="1">1+</option>
+          </select>
         </div>
 
         <div class="ml-auto glass rounded-2xl px-4 py-3 text-sm text-white/80">
@@ -276,9 +274,9 @@
 
   <!-- MODAL -->
   <div id="modal" class="hidden fixed inset-0 z-50 modal-backdrop">
-    <div id="modalShell" class="min-h-screen flex items-center justify-center p-4">
-      <div id="modalPanel" class="glass-strong rounded-3xl max-w-4xl w-full overflow-hidden border border-white/15">
-        <div id="modalBody" class="p-5 md:p-8"></div>
+    <div class="min-h-screen flex items-center justify-center p-4">
+      <div class="glass-strong rounded-3xl max-w-4xl w-full overflow-hidden border border-white/15">
+        <div id="modalBody" class="p-6 md:p-8"></div>
       </div>
     </div>
   </div>
