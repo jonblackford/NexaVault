@@ -887,5 +887,20 @@ supabase.auth.onAuthStateChange(() => {
   // =========================
   // Boot
   // =========================
+// Library filter + sort controls (attach listeners)
+// =========================
+function wireLibraryControls() {
+  const controls = [filterScope, filterMediaType, filterFormat, sortBy, minRating].filter(Boolean);
+  controls.forEach((el) => el.addEventListener("change", () => {
+    try { renderLibrary(); } catch (e) { console.error(e); }
+  }));
+  librarySearch?.addEventListener("input", () => {
+    try { window.requestAnimationFrame(renderLibrary); } catch (e) { console.error(e); }
+  });
+}
+
+wireLibraryControls();
+
+// =========================
   refreshSessionUI();
 })();
