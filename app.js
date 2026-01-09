@@ -48,6 +48,9 @@
   const statsText = document.getElementById("statsText");
 
   const grid = document.getElementById("grid");
+  const list = document.getElementById("list");
+  const viewGridBtn = document.getElementById("viewGridBtn");
+  const viewListBtn = document.getElementById("viewListBtn");
   const emptyState = document.getElementById("emptyState");
 
   const modal = document.getElementById("modal");
@@ -97,7 +100,18 @@
   function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
   function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
 
-  function imgUrl(path, size="w500") {
+  
+function starsForRating(r){
+  const val = Number(r);
+  if(!Number.isFinite(val)) return "";
+  const five = Math.round((val/2)*2)/2;
+  const full = Math.floor(five);
+  const half = five-full >= 0.5 ? 1 : 0;
+  const empty = 5-full-half;
+  return `${"★".repeat(full)}${half ? "½" : ""}${"☆".repeat(empty)}  (${val.toFixed(1)}/10)`;
+}
+
+function imgUrl(path, size="w500") {
     if (!path) return null;
     if (size === "orig") return `${TMDB_IMG_ORIG}${path}`;
     return `${TMDB_IMG_500}${path}`;
@@ -124,6 +138,7 @@
   let sessionUser = null;
   let library = [];
   let searchType = "all";
+  let viewMode = localStorage.getItem("nv_view") || "grid";
 
   // ---- TMDB
   async function tmdbFetch(url) {
@@ -296,7 +311,14 @@
     return scopeOk && typeOk && formatOk && ratingOk && searchOk;
   }
 
-  function sortLibraryRows(rows) {
+  function toTime(v){
+  if(!v) return 0;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function sortLibraryRows(rows) {
+
     const mode = (sortBy?.value || "added_desc");
     const parseYear = (y) => {
       const n = parseInt((y||"").toString().slice(0,4), 10);
@@ -316,7 +338,7 @@
     const out = [...rows];
     out.sort((a,b) => {
       switch(mode) {
-        case "added_asc": return (new Date(a.created_at).getTime()||0) - (new Date(b.created_at).getTime()||0);
+        case "added_asc": return toTime(a.created_at) - toTime(b.created_at);
         case "release_desc": return dateNum(b) - dateNum(a);
         case "release_asc": return dateNum(a) - dateNum(b);
         case "rating_desc": return ratingNum(b) - ratingNum(a);
@@ -339,6 +361,13 @@
       return;
     }
     emptyState?.classList.add("hidden");
+    if (viewMode === "list") {
+      grid?.classList.add("hidden");
+      list?.classList.remove("hidden");
+    } else {
+      list?.classList.add("hidden");
+      grid?.classList.remove("hidden");
+    }
 
     grid.innerHTML = filtered.map(row => {
       const poster = row.poster_url || "";
@@ -381,6 +410,37 @@
         if (row) showItemModal(row);
       });
     });
+// List view
+if (list) {
+  list.innerHTML = filtered.map((row) => {
+    const scopeLabel =
+      row.scope === "title" ? (row.media_type === "tv" ? "Series" : "Movie") :
+      row.scope === "season" ? `Season ${row.season_number}` :
+      `S${row.season_number}E${row.episode_number}`;
+    const rating = (row.rating ?? null);
+    return `
+      <button class="w-full text-left p-4 flex items-center gap-4 hover:bg-white/5 transition border-b border-white/10 last:border-b-0" data-rowid="${row.id}">
+        <div class="w-12 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex-shrink-0">
+          ${row.poster_url ? `<img src="${esc(row.poster_url)}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center text-xl">🎬</div>`}
+        </div>
+        <div class="flex-1 min-w-0">
+          <div class="font-semibold truncate">${esc(row.title)}</div>
+          <div class="text-xs text-white/60 mt-0.5 truncate">${esc(scopeLabel)} • ${esc(row.year || "")} • ${esc(row.format || "Digital")}</div>
+          ${rating !== null && rating !== undefined && rating !== "" ? `<div class="text-xs text-white/70 mt-1">⭐ ${Number(rating).toFixed(1)}/10</div>` : ""}
+        </div>
+        <div class="text-white/60">›</div>
+      </button>
+    `;
+  }).join("");
+
+  [...list.querySelectorAll("button[data-rowid]")].forEach(card => {
+    card.addEventListener("click", () => {
+      const rowId = Number(card.dataset.rowid);
+      const row = library.find(r => r.id === rowId);
+      if (row) showItemModal(row);
+    });
+  });
+}
   }
 
   // ---- Modals: view/edit item
@@ -427,8 +487,9 @@
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating (0-10)</label>
-                <input id="eRating" type="number" min="0" max="10" step="0.5" value="${row.rating ?? ""}" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+                <label class="text-xs text-white/70">Rating</label>
+                <input id="eRating" type="range" min="0" max="10" step="0.5" value="${row.rating ?? 0}" class="mt-1 w-full" />
+<div id="eRatingStars" class="mt-1 text-sm text-white/80"></div>
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry</label>
@@ -458,10 +519,17 @@
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
+    const eRatingEl = document.getElementById("eRating");
+    const eRatingStarsEl = document.getElementById("eRatingStars");
+    const updateERatingStars = () => { if(eRatingStarsEl) eRatingStarsEl.textContent = starsForRating(eRatingEl?.value || 0); };
+    eRatingEl?.addEventListener("input", updateERatingStars);
+    updateERatingStars();
+
     document.getElementById("saveBtn").addEventListener("click", async () => {
       const format = document.getElementById("eFormat").value;
       const ratingRaw = document.getElementById("eRating").value;
-      const rating = ratingRaw === "" ? null : Number(ratingRaw);
+      const ratingNum = Number(ratingRaw);
+      const rating = Number.isFinite(ratingNum) ? ratingNum : null;
       const comment = document.getElementById("eComment").value;
 
       const { error } = await supabase
@@ -571,8 +639,9 @@
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating (0-10)</label>
-                <input id="rating" type="number" min="0" max="10" step="0.5" value="" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+                <label class="text-xs text-white/70">Rating</label>
+                <input id="rating" type="range" min="0" max="10" step="0.5" value="0" class="mt-1 w-full" />
+<div id="ratingStars" class="mt-1 text-sm text-white/80"></div>
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry</label>
@@ -604,11 +673,18 @@
     const buildCommon = () => {
       const format = document.getElementById("format").value;
       const ratingRaw = document.getElementById("rating").value;
-      const rating = ratingRaw === "" ? null : Number(ratingRaw);
+      const ratingNum = Number(ratingRaw);
+      const rating = Number.isFinite(ratingNum) ? ratingNum : null;
       const comment = document.getElementById("comment").value;
       const releasePart = USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {};
       return { format, rating, comment, releasePart };
     };
+
+    const ratingEl = document.getElementById("rating");
+    const ratingStarsEl = document.getElementById("ratingStars");
+    const updateRatingStars = () => { if(ratingStarsEl) ratingStarsEl.textContent = starsForRating(ratingEl?.value || 0); };
+    ratingEl?.addEventListener("input", updateRatingStars);
+    updateRatingStars();
 
     document.getElementById("saveTitleBtn").addEventListener("click", async () => {
       const { format, rating, comment, releasePart } = buildCommon();
@@ -633,7 +709,7 @@
         runtime: d.runtime
       };
       const ok = await upsertItem(payload);
-      if (ok) closeModal();
+      if (ok) { closeModal(); clearSearchUI(); }
     });
 
     if (d.media_type === "tv") {
@@ -796,7 +872,14 @@
     if (e.key === "Enter") doSearch();
   });
 
-  function renderSearchResults(items) {
+  function clearSearchUI(){
+  if (searchInput) searchInput.value = "";
+  searchResults?.classList.add("hidden");
+  if (searchResults) searchResults.innerHTML = "";
+}
+
+function renderSearchResults(items) {
+ {
     if (!searchResults) return;
     if (!items.length) {
       searchResults.innerHTML = `<div class="p-4 text-sm text-white/70">No results</div>`;
@@ -933,4 +1016,19 @@
 
   // Boot
   refreshSessionUI(0);
-})();
+})();function applyViewMode(){
+  localStorage.setItem("nv_view", viewMode);
+  btnActive(viewGridBtn, viewMode === "grid");
+  btnActive(viewListBtn, viewMode === "list");
+}
+viewGridBtn?.addEventListener("click", () => { viewMode = "grid"; applyViewMode(); renderLibrary(); });
+viewListBtn?.addEventListener("click", () => { viewMode = "list"; applyViewMode(); renderLibrary(); });
+applyViewMode();
+
+// Force filters open on desktop
+const filtersDetails = document.getElementById("filtersDetails");
+const syncFiltersOpen = () => { if (!filtersDetails) return; if (window.matchMedia("(min-width: 768px)").matches) filtersDetails.open = true; };
+window.addEventListener("resize", syncFiltersOpen);
+syncFiltersOpen();
+
+
