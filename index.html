@@ -2,40 +2,38 @@
 <html lang="en" class="h-full">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>NexaVault • Media Catalog</title>
 
-  <meta name="theme-color" content="#0b1023" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <link rel="manifest" href="./manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-
+  <!-- Tailwind CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Font (matches your current vibe) -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Supabase JS (UMD) -->
   <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
 
   <style>
     :root{
-      --bg1:#070912; --bg2:#0b1023;
+      --bg1: #070912;
+      --bg2: #0b1023;
       --glass: rgba(255,255,255,0.08);
-      --glass2: rgba(255,255,255,0.14);
+      --glass2: rgba(255,255,255,0.12);
       --stroke: rgba(255,255,255,0.12);
       --stroke2: rgba(255,255,255,0.18);
     }
-    html, body { height: 100%; width:100%; overflow-x:hidden; }
+    html, body { height: 100%; }
     body{
-      font-family:'Outfit', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      font-family: 'Outfit', system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
       background:
         radial-gradient(1200px 700px at 18% 12%, rgba(98,130,255,.22), transparent 55%),
         radial-gradient(1000px 600px at 82% 30%, rgba(255, 98,205,.14), transparent 60%),
         radial-gradient(900px 600px at 60% 90%, rgba(71,255,202,.10), transparent 55%),
         linear-gradient(135deg, var(--bg1), var(--bg2));
       color: rgba(255,255,255,.92);
+      overflow-x: hidden;
     }
-    * , *::before, *::after { box-sizing: border-box; }
-    input, select, textarea, button { font-size: 16px; }
     .glass{
       background: var(--glass);
       border: 1px solid var(--stroke);
@@ -44,19 +42,28 @@
       box-shadow: 0 20px 60px rgba(0,0,0,0.35);
     }
     .glass-strong{
-      background: rgba(10,14,30,0.95);
+      background: var(--glass2);
       border: 1px solid var(--stroke2);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
       box-shadow: 0 26px 80px rgba(0,0,0,0.45);
     }
-    .chip{ border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); }
+    .chip{
+      border: 1px solid rgba(255,255,255,0.14);
+      background: rgba(255,255,255,0.06);
+    }
     .soft-divider{ border-color: rgba(255,255,255,0.10); }
     .btn{ transition: transform .08s ease, background .2s ease, opacity .2s ease; }
     .btn:active{ transform: translateY(1px); }
-    .input{ background: rgba(0,0,0,0.28); border: 1px solid rgba(255,255,255,0.10); }
-    .input:focus{ outline:none; border-color: rgba(255,255,255,0.22); box-shadow: 0 0 0 4px rgba(99,102,241,0.18); }
-
+    .input{
+      background: rgba(0,0,0,0.28);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+    .input:focus{
+      outline: none;
+      border-color: rgba(255,255,255,0.22);
+      box-shadow: 0 0 0 4px rgba(99,102,241,0.18);
+    }
     .poster-card{
       background: rgba(255,255,255,0.05);
       border: 1px solid rgba(255,255,255,0.10);
@@ -64,28 +71,33 @@
       -webkit-backdrop-filter: blur(10px);
       transition: transform .18s ease, background .2s ease, box-shadow .2s ease;
     }
-    .poster-card:hover{ transform: translateY(-6px); background: rgba(255,255,255,0.08); box-shadow: 0 24px 60px rgba(0,0,0,0.35); }
-
-    #searchResults{ max-height: 60vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-
-    /* Modal scrolling (critical for episodes on mobile) */
-    #modalPanel{ max-height: calc(100dvh - 2rem); overflow: hidden; }
-    #modalBody{ max-height: calc(100dvh - 6rem); overflow-y: auto; -webkit-overflow-scrolling: touch; }
-    #seasonPicker{ max-height: 55vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-
-    body.modal-open{ overflow:hidden; touch-action:none; }
-    @media (max-width: 420px){ #profileMenu{ width: min(92vw, 20rem); } }
-
-    details.filters > summary {
-      list-style: none;
-      cursor: pointer;
-      user-select: none;
+    .poster-card:hover{
+      transform: translateY(-6px);
+      background: rgba(255,255,255,0.08);
+      box-shadow: 0 24px 60px rgba(0,0,0,0.35);
     }
-    details.filters > summary::-webkit-details-marker { display:none; }
-  </style>
+    .modal-backdrop{
+      background: rgba(0,0,0,0.62);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .skeleton{
+      background: linear-gradient(90deg, rgba(255,255,255,0.06), rgba(255,255,255,0.12), rgba(255,255,255,0.06));
+      background-size: 300% 100%;
+      animation: sk 1.2s ease infinite;
+    }
+    @keyframes sk{ 0%{background-position: 0% 0} 100%{background-position: 100% 0} }
+  
+  /* Profile dropdown mobile tweak */
+  @media (max-width: 420px){
+    #profileMenu{ width: min(92vw, 20rem); }
+  }
+</style>
+
 </head>
 
 <body class="h-full">
+  <!-- Top bar -->
   <header class="sticky top-0 z-50 border-b soft-divider bg-black/25 backdrop-blur">
     <div class="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
       <div class="flex items-center gap-3">
@@ -99,61 +111,82 @@
       </div>
 
       <div class="ml-auto relative flex items-center gap-2">
-        <button id="profileBtn" class="hidden btn h-10 w-10 rounded-2xl glass hover:bg-white/10 flex items-center justify-center" aria-label="Profile menu" type="button">
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20 21a8 8 0 0 0-16 0"/>
-            <circle cx="12" cy="7" r="4"/>
-          </svg>
-        </button>
+  <button id="profileBtn" class="hidden btn h-10 w-10 rounded-2xl glass hover:bg-white/10 flex items-center justify-center" aria-label="Profile menu" type="button">
+    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M20 21a8 8 0 0 0-16 0"/>
+      <circle cx="12" cy="7" r="4"/>
+    </svg>
+  </button>
 
-        <div id="profileMenu" class="hidden absolute right-0 top-12 w-72 rounded-2xl border border-white/15 overflow-hidden" style="background: rgba(10,14,30,0.95); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);">
-          <div class="p-4">
-            <div class="text-xs uppercase tracking-[0.25em] text-white/60">Signed in as</div>
-            <div id="profileEmail" class="mt-1 text-sm text-white/90 break-all">—</div>
-          </div>
-          <div class="border-t soft-divider"></div>
-          <div class="p-2 space-y-2">
-            <button id="collectionsBtn" class="w-full btn rounded-2xl px-4 py-3 text-left hover:bg-white/10 border border-white/10">
-              Collections
-            </button>
-            <button id="profileLogout" class="w-full btn rounded-2xl px-4 py-3 text-left hover:bg-white/10 border border-white/10">
-              Log out
-            </button>
-          </div>
-        </div>
-      </div>
+  <div id="profileMenu" class="hidden absolute right-0 top-12 w-72 rounded-2xl glass-strong border border-white/15 overflow-hidden">
+    <div class="p-4">
+      <div class="text-xs uppercase tracking-[0.25em] text-white/60">Signed in as</div>
+      <div id="profileEmail" class="mt-1 text-sm text-white/90 break-all">—</div>
+    </div>
+    <div class="border-t soft-divider"></div>
+    <div class="p-2">
+      <button id="profileLogout" class="w-full btn rounded-2xl px-4 py-3 text-left hover:bg-white/10 border border-white/10">
+        Log out
+      </button>
+    </div>
+  </div>
+</div>
     </div>
   </header>
 
   <main class="mx-auto max-w-6xl px-4 py-8">
     <!-- AUTH -->
-    <section id="authPanel" class="glass rounded-3xl p-6 md:p-8">
-      <h1 class="text-2xl md:text-3xl font-semibold">Sign in</h1>
+    <section id="authPanel" class="glass-strong rounded-3xl p-6 md:p-8">
+      <div class="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <div>
+          <h1 class="text-2xl md:text-3xl font-semibold">Sign in to your catalog</h1>
+          <p class="text-white/70 mt-2">
+            Search TMDB, add movies or shows, rate /10, pick format, leave notes — saved to your account.
+          </p>
+        </div>
+        <div class="chip rounded-2xl px-4 py-2 text-sm text-white/70">
+          Static site on GitHub Pages • Auth + DB via Supabase
+        </div>
+      </div>
+
       <div class="mt-6">
-        <form id="authForm" class="space-y-3">
-          <input id="authEmail" type="email" required placeholder="Email" class="w-full rounded-2xl px-4 py-3 input" />
-          <input id="authPassword" type="password" required placeholder="Password" class="w-full rounded-2xl px-4 py-3 input" />
-          <div class="flex gap-2">
-            <button id="signInBtn" type="button" class="btn w-1/2 rounded-2xl px-4 py-3 bg-white/10 hover:bg-white/15 border border-white/10">
-              Sign in
-            </button>
-            <button id="signUpBtn" type="button" class="btn w-1/2 rounded-2xl px-4 py-3 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
-              Create account
-            </button>
-          </div>
-          <div id="authMsg" class="text-sm text-white/70"></div>
-        </form>
+        <div class="glass rounded-3xl p-5">
+          <h2 class="font-semibold text-lg">Email + Password</h2>
+          <p class="text-sm text-white/70 mt-1">Works great on GitHub Pages.</p>
+
+          <form id="authForm" class="mt-4 space-y-3">
+            <input id="authEmail" type="email" required placeholder="Email"
+              class="w-full rounded-2xl px-4 py-3 input" />
+            <input id="authPassword" type="password" required placeholder="Password"
+              class="w-full rounded-2xl px-4 py-3 input" />
+
+            <div class="flex gap-2">
+              <button id="signInBtn" type="button"
+                class="btn w-1/2 rounded-2xl px-4 py-3 bg-white/10 hover:bg-white/15 border border-white/10">
+                Sign in
+              </button>
+              <button id="signUpBtn" type="button"
+                class="btn w-1/2 rounded-2xl px-4 py-3 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+                Create account
+              </button>
+            </div>
+
+            <div id="authMsg" class="text-sm text-white/70"></div>
+          </form>
+        </div>
       </div>
     </section>
 
     <!-- APP -->
     <section id="appPanel" class="hidden space-y-6">
-      <!-- Search -->
-      <div class="glass rounded-3xl p-5 md:p-6">
+      <!-- Search + controls -->
+      <div class="glass-strong rounded-3xl p-5 md:p-6">
         <div class="flex flex-col md:flex-row md:items-center gap-3">
           <div class="flex-1">
-            <h2 class="text-xl font-semibold">Search</h2>
+            <h2 class="text-xl font-semibold">Search TMDB</h2>
+            <p class="text-white/70 text-sm mt-1">Add movies, full TV series, seasons, or single episodes.</p>
           </div>
+
           <div class="flex gap-2">
             <button id="typeAll" class="btn chip rounded-2xl px-4 py-2 text-sm">All</button>
             <button id="typeMovie" class="btn chip rounded-2xl px-4 py-2 text-sm">Movies</button>
@@ -163,9 +196,11 @@
 
         <div class="mt-4 flex flex-col md:flex-row gap-3">
           <div class="flex-1">
-            <input id="searchInput" placeholder="Search titles, actors, shows, movies..." class="w-full rounded-2xl px-4 py-3 input" />
+            <input id="searchInput" placeholder="Search titles, actors, shows, movies..."
+              class="w-full rounded-2xl px-4 py-3 input" />
           </div>
-          <button id="searchBtn" class="btn rounded-2xl px-5 py-3 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
+          <button id="searchBtn"
+            class="btn rounded-2xl px-5 py-3 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
             Search
           </button>
         </div>
@@ -173,17 +208,9 @@
         <div id="searchResults" class="hidden mt-4 glass rounded-2xl overflow-hidden"></div>
       </div>
 
-      <!-- Filters + view -->
-      <details id="filtersDetails" class="filters glass rounded-2xl p-3">
-        <summary class="flex items-center justify-between">
-          <div class="font-semibold">Filters</div>
-          <div class="text-white/70 text-sm">Tap to expand</div>
-        </summary>
-
-        <div class="mt-3 flex flex-col md:flex-row md:flex-wrap gap-2">
-          <select id="filterCollection" class="rounded-xl px-3 py-2 input">
-            <option value="all">All collections</option>
-          </select>
+      <!-- Library filters -->
+      <div class="flex flex-col md:flex-row md:items-center gap-3">
+        <div class="glass rounded-2xl p-3 flex flex-col md:flex-row gap-2 w-full md:w-auto">
           <select id="filterScope" class="rounded-xl px-3 py-2 input">
             <option value="all">All entries</option>
             <option value="title">Titles</option>
@@ -203,9 +230,7 @@
             <option value="4K Ultra HD">4K Ultra HD</option>
             <option value="VHS">VHS</option>
           </select>
-
           <input id="librarySearch" placeholder="Search your library…" class="rounded-xl px-3 py-2 input w-full md:w-56" />
-
           <select id="sortBy" class="rounded-xl px-3 py-2 input">
             <option value="added_desc">Added: newest</option>
             <option value="added_asc">Added: oldest</option>
@@ -216,29 +241,31 @@
             <option value="title_asc">Title: A → Z</option>
             <option value="title_desc">Title: Z → A</option>
           </select>
-
           <select id="minRating" class="rounded-xl px-3 py-2 input">
             <option value="0">Any rating</option>
-            <option value="10">10+</option><option value="9">9+</option><option value="8">8+</option>
-            <option value="7">7+</option><option value="6">6+</option><option value="5">5+</option>
-            <option value="4">4+</option><option value="3">3+</option><option value="2">2+</option><option value="1">1+</option>
+            <option value="10">10+</option>
+            <option value="9">9+</option>
+            <option value="8">8+</option>
+            <option value="7">7+</option>
+            <option value="6">6+</option>
+            <option value="5">5+</option>
+            <option value="4">4+</option>
+            <option value="3">3+</option>
+            <option value="2">2+</option>
+            <option value="1">1+</option>
           </select>
-
-          <div class="ml-auto flex gap-2">
-            <button id="viewGridBtn" class="btn chip rounded-2xl px-4 py-2 text-sm">Grid</button>
-            <button id="viewListBtn" class="btn chip rounded-2xl px-4 py-2 text-sm">List</button>
-          </div>
         </div>
-      </details>
 
-      <div class="glass rounded-2xl px-4 py-3 text-sm text-white/80">
-        <span id="statsText">0 items</span>
+        <div class="ml-auto glass rounded-2xl px-4 py-3 text-sm text-white/80">
+          <span id="statsText">0 items</span>
+        </div>
       </div>
 
+      <!-- Grid -->
       <div id="grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-5"></div>
-      <div id="list" class="hidden space-y-2"></div>
 
-      <div id="emptyState" class="text-center py-16 hidden">
+      <!-- Empty -->
+      <div id="emptyState" class="text-center py-16">
         <div class="text-7xl mb-4">🎬</div>
         <p class="text-xl text-white/75">Your catalog is empty. Search above to start building it.</p>
       </div>
@@ -246,10 +273,10 @@
   </main>
 
   <!-- MODAL -->
-  <div id="modal" class="hidden fixed inset-0 z-50" style="background: rgba(0,0,0,0.62); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);">
-    <div id="modalShell" class="min-h-screen flex items-center justify-center p-4">
-      <div id="modalPanel" class="glass rounded-3xl max-w-4xl w-full border border-white/15">
-        <div id="modalBody" class="p-5 md:p-8"></div>
+  <div id="modal" class="hidden fixed inset-0 z-50 modal-backdrop">
+    <div class="min-h-screen flex items-center justify-center p-4">
+      <div class="glass-strong rounded-3xl max-w-4xl w-full overflow-hidden border border-white/15">
+        <div id="modalBody" class="p-6 md:p-8"></div>
       </div>
     </div>
   </div>
@@ -260,16 +287,5 @@
   </div>
 
   <script src="./app.js"></script>
-  <script>
-    // Keep filters open on desktop, collapsible on mobile
-    const details = document.getElementById('filtersDetails');
-    const mq = window.matchMedia('(min-width: 768px)');
-    function syncDetails() {
-      if (!details) return;
-      if (mq.matches) details.open = true;
-    }
-    mq.addEventListener?.('change', syncDetails);
-    window.addEventListener('load', syncDetails);
-  </script>
 </body>
 </html>
