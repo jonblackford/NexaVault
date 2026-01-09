@@ -817,13 +817,10 @@ function renderLibrary() {
       authMsg.textContent = error.message;
       return;
     }
-    authMsg.textContent = "Account created. If email confirmation is enabled, check your inbox.";
-    await refreshSessionUI();
-  });
+    authMsg.textContent = "Account created. If you get a confirmation email, confirm it then sign in.";
+    showToast("Account created");
+});
 
-  showToast("Logged out");
-    await refreshSessionUI();
-  });
 
 // Profile interactions
 profileBtn?.addEventListener("click", (e) => {
@@ -855,9 +852,9 @@ supabase.auth.onAuthStateChange(() => {
     btnActive(typeMovie, t === "movie");
     btnActive(typeTv, t === "tv");
   }
-  typeAll.addEventListener("click", () => setSearchType("all"));
-  typeMovie.addEventListener("click", () => setSearchType("movie"));
-  typeTv.addEventListener("click", () => setSearchType("tv"));
+  typeAll?.addEventListener("click", () => setSearchType("all"));
+  typeMovie?.addEventListener("click", () => setSearchType("movie"));
+  typeTv?.addEventListener("click", () => setSearchType("tv"));
   setSearchType("all");
 
   async function doSearch() {
