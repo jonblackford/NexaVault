@@ -48,6 +48,9 @@
   const modal = document.getElementById("modal");
   const modalBody = document.getElementById("modalBody");
   const toast = document.getElementById("toast");
+  const profileMenu = document.getElementById("profileMenu");
+  const viewCollectionsBtn = document.getElementById("viewCollectionsBtn");
+  const profileLogoutBtn = document.getElementById("profileLogoutBtn");
 
   // Supabase init
   if (!SUPABASE_URL.startsWith("http")) {
@@ -759,6 +762,37 @@
 
   supabase.auth.onAuthStateChange(() => {
     refreshSessionUI();
+  });
+
+  // Profile dropdown interactions
+  if (userPill) {
+    userPill.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (profileMenu) profileMenu.classList.toggle("hidden");
+    });
+  }
+
+  if (viewCollectionsBtn) {
+    viewCollectionsBtn.addEventListener("click", () => {
+      if (profileMenu) profileMenu.classList.add("hidden");
+      openCollectionsModal();
+    });
+  }
+
+  if (profileLogoutBtn) {
+    profileLogoutBtn.addEventListener("click", async () => {
+      if (profileMenu) profileMenu.classList.add("hidden");
+      await supabase.auth.signOut();
+      showToast("Logged out");
+      await refreshSessionUI();
+    });
+  }
+
+  // Click outside closes profile menu
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#userPill") && !e.target.closest("#profileMenu")) {
+      if (profileMenu) profileMenu.classList.add("hidden");
+    }
   });
 
   // =========================
