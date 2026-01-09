@@ -200,19 +200,51 @@ function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
   }
 
   async function upsertItem(payload) {
-    // payload must include: user_id, tmdb_id, media_type, scope, title
-    const { error } = await supabase.from("media_items").upsert(payload, {
-      onConflict: "user_id,tmdb_id,media_type,scope,season_number,episode_number"
-    });
-    if (error) {
-      console.error(error);
-      showToast("Save failed");
-      return false;
+  // payload must include: user_id, tmdb_id, media_type, scope, title
+  const attempt = async (p) => supabase.from("media_items").upsert(p, {
+    onConflict: "user_id,tmdb_id,media_type,scope,season_number,episode_number"
+  });
+
+  let { error } = await attempt(payload);
+
+  // If schema mismatch (cast vs cast_list, or release_date column missing), retry with safer payload
+  if (error) {
+    const msg = (error.message || "").toLowerCase();
+
+    // cast_list column missing -> retry with cast
+    if (msg.includes('column') && msg.includes('cast_list') && msg.includes('does not exist')) {
+      const { cast_list, ...rest } = payload;
+      ({ error } = await attempt({ ...rest, cast: cast_list ?? null }));
     }
-    await loadLibrary();
-    showToast("Saved");
-    return true;
+
+    // cast column missing -> retry with cast_list
+    if (error) {
+      const msg2 = (error.message || "").toLowerCase();
+      if (msg2.includes('column') && msg2.includes('cast') && msg2.includes('does not exist')) {
+        const { cast, ...rest } = payload;
+        ({ error } = await attempt({ ...rest, cast_list: cast ?? null }));
+      }
+    }
+
+    // release_date missing -> drop it and retry
+    if (error) {
+      const msg3 = (error.message || "").toLowerCase();
+      if (msg3.includes('column') && msg3.includes('release_date') && msg3.includes('does not exist')) {
+        const { release_date, ...rest } = payload;
+        ({ error } = await attempt(rest));
+      }
+    }
   }
+
+  if (error) {
+    console.error(error);
+    showToast("Save failed");
+    return false;
+  }
+  await loadLibrary();
+  showToast("Saved");
+  return true;
+}
 
   async function deleteItem(rowId) {
     const { error } = await supabase.from("media_items").delete().eq("id", rowId);
@@ -556,14 +588,16 @@ function renderLibrary() {
       loadSeasonBtn.addEventListener("click", async () => {
         const season_number = Number(seasonSelect.value);
         seasonPicker.classList.remove("hidden");
+        // Bring episode picker into view on mobile
+        seasonPicker.scrollIntoView({ behavior: "smooth", block: "start" });
         seasonPicker.innerHTML = `
           <div class="glass rounded-2xl p-4 border border-white/10">
             <div class="flex items-center justify-between">
               <div class="font-semibold">Season ${season_number}</div>
               <button id="closeSeasonPicker" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Hide</button>
             </div>
-            <div class="mt-3 text-sm text-white/70">Loading episodes…</div>
-            <div class="mt-4 space-y-2" id="epList"></div>
+            <div id="episodesStatus" class="mt-3 text-sm text-white/70">Loading episodes…</div>
+            <div class="mt-4 space-y-2 max-h-[50vh] overflow-y-auto pr-1" id="epList"></div>
           </div>
         `;
         document.getElementById("closeSeasonPicker").addEventListener("click", () => {
@@ -713,7 +747,7 @@ try {
 
             <div class="glass rounded-2xl p-4 border border-white/10">
               <div class="text-sm text-white/70">Cast</div>
-              <div class="text-sm mt-1">${esc(row.cast_list || "—")}</div>
+              <div class="text-sm mt-1">${esc((row.cast_list || row.cast) || "—")}</div>
             </div>
 
             <div class="grid md:grid-cols-3 gap-3">
