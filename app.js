@@ -529,7 +529,7 @@ function renderLibrary() {
         rating,
         comment,
         genre: d.genre,
-        cast: d.cast,
+        cast_list: d.cast,
         overview: d.overview,
         runtime: d.runtime,
         season_number: null,
@@ -570,8 +570,18 @@ function renderLibrary() {
           seasonPicker.classList.add("hidden");
         });
 
-        const episodes = await getSeasonEpisodes(d.tmdb_id, season_number);
-        const epList = document.getElementById("epList");
+        let episodes = [];
+const epList = document.getElementById("epList");
+const status = document.getElementById("episodesStatus");
+try {
+  episodes = await getSeasonEpisodes(d.tmdb_id, season_number);
+  if (status) status.textContent = "";
+} catch (e) {
+  console.error(e);
+  if (status) status.textContent = "Failed to load episodes. Check your TMDB key and try again.";
+  epList.innerHTML = "";
+  return;
+}
 
         if (!episodes.length) {
           epList.innerHTML = `<div class="text-sm text-white/60">No episodes found.</div>`;
@@ -623,7 +633,7 @@ function renderLibrary() {
             rating,
             comment,
             genre: d.genre,
-            cast: d.cast,
+            cast_list: d.cast,
             overview: d.overview,
             runtime: d.runtime,
             season_number,
@@ -656,7 +666,7 @@ function renderLibrary() {
               rating,
               comment,
               genre: d.genre,
-              cast: d.cast,
+              cast_list: d.cast,
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
               season_number,
