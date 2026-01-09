@@ -96,7 +96,13 @@
   #modalBody{ max-height: calc(100dvh - 5.25rem); }
 }
 #seasonPicker{ max-height: 55vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
-  </style>
+  
+  /* Profile dropdown mobile tweak */
+  @media (max-width: 420px){
+    #profileMenu{ width: min(92vw, 20rem); }
+  }
+</style>
+
 </head>
 
 <body class="h-full">
@@ -113,17 +119,30 @@
         </div>
       </div>
 
-      <div class="ml-auto flex items-center gap-2">
-        <div id="userPill" class="hidden md:flex items-center gap-2 px-3 py-2 rounded-2xl glass">
-          <div class="h-2 w-2 rounded-full bg-emerald-400"></div>
-          <span id="userEmail" class="text-sm text-white/80"></span>
+      <div class="ml-auto relative flex items-center gap-2">
+      <button id="profileBtn" class="hidden btn h-10 w-10 rounded-2xl glass hover:bg-white/10 flex items-center justify-center" aria-label="Profile menu" type="button">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-white/85" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21a8 8 0 0 0-16 0"/>
+          <circle cx="12" cy="7" r="4"/>
+        </svg>
+      </button>
+
+      <div id="profileMenu" class="hidden absolute right-0 top-12 w-72 rounded-2xl border overflow-hidden"
+           style="background: rgba(10,14,30,0.95); border-color: rgba(255,255,255,0.18); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);">
+        <div class="p-4">
+          <div class="text-xs uppercase tracking-[0.25em] text-white/60">Signed in as</div>
+          <div id="profileEmail" class="mt-1 text-sm text-white/90 break-all">—</div>
         </div>
-        <button id="logoutBtn" class="hidden btn px-3 py-2 rounded-2xl glass hover:bg-white/10 text-sm">
-          Log out
-        </button>
+        <div class="border-t soft-divider"></div>
+        <div class="p-2">
+          <button id="profileLogout" class="w-full btn rounded-2xl px-4 py-3 text-left hover:bg-white/10 border border-white/10">
+            Log out
+          </button>
+        </div>
       </div>
     </div>
-  </header>
+  </div>
+</header>
 
   <main class="mx-auto max-w-6xl px-4 py-8">
     <!-- AUTH -->

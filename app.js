@@ -25,12 +25,7 @@
   const authMsg = document.getElementById("authMsg");
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
-
-  const userPill = document.getElementById("userPill");
-  const userEmail = document.getElementById("userEmail");
-  const logoutBtn = document.getElementById("logoutBtn");
-
-  const typeAll = document.getElementById("typeAll");
+const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
   const typeTv = document.getElementById("typeTv");
   const searchInput = document.getElementById("searchInput");
@@ -77,6 +72,11 @@
     toast.querySelector("div").textContent = message;
     setTimeout(() => toast.classList.add("hidden"), 2400);
   }
+
+
+// Profile menu helpers
+function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
+function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
 
   function openModal(html) {
     modalBody.innerHTML = html;
@@ -466,7 +466,7 @@
         rating,
         comment,
         genre: d.genre,
-        cast: d.cast,
+        cast_list: d.cast,
         overview: d.overview,
         runtime: d.runtime,
         season_number: null,
@@ -493,6 +493,7 @@
       loadSeasonBtn.addEventListener("click", async () => {
         const season_number = Number(seasonSelect.value);
         seasonPicker.classList.remove("hidden");
+        seasonPicker.scrollIntoView({ behavior: "smooth", block: "start" });
         seasonPicker.innerHTML = `
           <div class="glass rounded-2xl p-4 border border-white/10">
             <div class="flex items-center justify-between">
@@ -559,7 +560,7 @@
             rating,
             comment,
             genre: d.genre,
-            cast: d.cast,
+            cast_list: d.cast,
             overview: d.overview,
             runtime: d.runtime,
             season_number,
@@ -591,7 +592,7 @@
               rating,
               comment,
               genre: d.genre,
-              cast: d.cast,
+              cast_list: d.cast,
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
               season_number,
@@ -638,7 +639,7 @@
 
             <div class="glass rounded-2xl p-4 border border-white/10">
               <div class="text-sm text-white/70">Cast</div>
-              <div class="text-sm mt-1">${esc(row.cast_list || "—")}</div>
+              <div class="text-sm mt-1">${esc(((row.cast_list || row.cast) || row.cast) || "—")}</div>
             </div>
 
             <div class="grid md:grid-cols-3 gap-3">
@@ -702,24 +703,38 @@
   // Auth
   // =========================
   async function refreshSessionUI() {
-    const { data } = await supabase.auth.getSession();
-    sessionUser = data.session?.user || null;
+  let session = null;
 
-    if (!sessionUser) {
-      authPanel.classList.remove("hidden");
-      appPanel.classList.add("hidden");
-      userPill.classList.add("hidden");
-      logoutBtn.classList.add("hidden");
-      return;
+  // Mobile can momentarily return null right after sign-in; retry briefly.
+  for (let i = 0; i < 3; i++) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      session = data.session || null;
+    } catch (e) {
+      console.warn("getSession error", e);
     }
-
-    authPanel.classList.add("hidden");
-    appPanel.classList.remove("hidden");
-    userPill.classList.remove("hidden");
-    logoutBtn.classList.remove("hidden");
-    userEmail.textContent = sessionUser.email || "Signed in";
-    await loadLibrary();
+    if (session) break;
+    await new Promise(r => setTimeout(r, 250));
   }
+
+  sessionUser = session?.user || null;
+
+  if (!sessionUser) {
+    authPanel.classList.remove("hidden");
+    appPanel.classList.add("hidden");
+    profileBtn?.classList.add("hidden");
+    closeProfileMenu();
+    return;
+  }
+
+  authPanel.classList.add("hidden");
+  appPanel.classList.remove("hidden");
+  profileBtn?.classList.remove("hidden");
+  if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
+  closeProfileMenu();
+
+  await loadLibrary();
+}
 
   signInBtn.addEventListener("click", async () => {
     authMsg.textContent = "";
@@ -749,15 +764,28 @@
     await refreshSessionUI();
   });
 
-  logoutBtn.addEventListener("click", async () => {
-    await supabase.auth.signOut();
-    showToast("Logged out");
+  showToast("Logged out");
     await refreshSessionUI();
   });
 
-  supabase.auth.onAuthStateChange(() => {
-    refreshSessionUI();
-  });
+// Profile interactions
+profileBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleProfileMenu();
+});
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) closeProfileMenu();
+});
+profileLogout?.addEventListener("click", async () => {
+  closeProfileMenu();
+  await supabase.auth.signOut();
+  showToast("Logged out");
+  await refreshSessionUI();
+});
+
+supabase.auth.onAuthStateChange(() => {
+  refreshSessionUI();
+});
 
   // =========================
   // Search + buttons
