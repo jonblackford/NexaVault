@@ -1,4 +1,5 @@
-const CACHE_NAME = "nexavault-cache-v40";
+// Bump cache name when files change so clients get updated assets
+const CACHE_NAME = "nexavault-cache-v41";
 const ASSETS = [
     "./",
     "./index.html",
