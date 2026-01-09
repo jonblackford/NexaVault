@@ -592,12 +592,12 @@ function renderLibrary() {
         // Bring episode picker into view on mobile
         seasonPicker.scrollIntoView({ behavior: "smooth", block: "start" });
         seasonPicker.innerHTML = `
-          <div class="glass rounded-2xl p-4 border border-white/10">
+          <div class="glass rounded-2xl p-4 border border-white/10 picker-card">
             <div class="flex items-center justify-between">
               <div class="font-semibold">Season ${season_number}</div>
               <button id="closeSeasonPicker" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Hide</button>
             </div>
-            <div id="episodesStatus" class="mt-3 text-sm text-white/70">Loading episodes…</div>
+            <div id="episodesStatus" class="mt-3 text-sm text-white/70"><span id="episodesStatus">Loading episodes…</span></div>
             <div class="mt-4 space-y-2 max-h-[50vh] overflow-y-auto pr-1" id="epList"></div>
           </div>
         `;

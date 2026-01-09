@@ -109,6 +109,21 @@
   
     /* Episode list scroll fix */
     #epList{ max-height: 50vh; overflow-y:auto; -webkit-overflow-scrolling: touch; }
+  
+    /* Episode picker: keep it visible + scrollable inside modal */
+    #seasonPicker{
+      max-height: 55vh;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #seasonPicker .picker-card{
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+    }
+
   </style>
 
 </head>
