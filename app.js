@@ -1,24 +1,26 @@
-/* NexaVault Media Catalog — stable build (v20)
-   - GitHub Pages + PWA
-   - Supabase Auth + DB
-   - TMDB search/details
+/* NexaVault • Media Catalog
+   - Static-host friendly (GitHub Pages)
+   - Auth + DB via Supabase
+   - Search/details via TMDB
 */
+
 (() => {
   // =========================
   // ✅ CONFIG (EDIT THESE)
   // =========================
+  // If you added a `release_date` column (text or date) to media_items, set true to store full dates.
+  const USE_RELEASE_DATE_COLUMN = false;
+
   const SUPABASE_URL = "https://zmljybyharvunwctxbwp.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InptbGp5YnloYXJ2dW53Y3R4YndwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njc4MDQ5NDgsImV4cCI6MjA4MzM4MDk0OH0.h6TW7xX4B4y8D-yBL6-WqnhYWo0MqFAAP14lzXmXyrg";
   const TMDB_API_KEY = "cc4e1c1296a271801dd38dd0c5742ec3";
-  // If you added a `release_date` column to media_items (text or date), set true:
-  const USE_RELEASE_DATE_COLUMN = false;
   // =========================
 
   const TMDB_BASE = "https://api.themoviedb.org/3";
   const TMDB_IMG_500 = "https://image.tmdb.org/t/p/w500";
   const TMDB_IMG_ORIG = "https://image.tmdb.org/t/p/original";
 
-  // ---- UI refs
+  // UI refs
   const authPanel = document.getElementById("authPanel");
   const appPanel = document.getElementById("appPanel");
   const authEmail = document.getElementById("authEmail");
@@ -26,13 +28,7 @@
   const authMsg = document.getElementById("authMsg");
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
-
-  const profileBtn = document.getElementById("profileBtn");
-  const profileMenu = document.getElementById("profileMenu");
-  const profileEmail = document.getElementById("profileEmail");
-  const profileLogout = document.getElementById("profileLogout");
-
-  const typeAll = document.getElementById("typeAll");
+const typeAll = document.getElementById("typeAll");
   const typeMovie = document.getElementById("typeMovie");
   const typeTv = document.getElementById("typeTv");
   const searchInput = document.getElementById("searchInput");
@@ -42,106 +38,84 @@
   const filterScope = document.getElementById("filterScope");
   const filterMediaType = document.getElementById("filterMediaType");
   const filterFormat = document.getElementById("filterFormat");
+  const filterCollection = document.getElementById("filterCollection");
   const librarySearch = document.getElementById("librarySearch");
   const sortBy = document.getElementById("sortBy");
   const minRating = document.getElementById("minRating");
   const statsText = document.getElementById("statsText");
 
   const grid = document.getElementById("grid");
-  const list = document.getElementById("list");
-  const viewGridBtn = document.getElementById("viewGridBtn");
-  const viewListBtn = document.getElementById("viewListBtn");
   const emptyState = document.getElementById("emptyState");
 
   const modal = document.getElementById("modal");
   const modalBody = document.getElementById("modalBody");
   const toast = document.getElementById("toast");
 
-  // ---- Helpers
+  // Supabase init
+  if (!SUPABASE_URL.startsWith("http")) {
+    console.warn("Supabase URL not set yet.");
+  }
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  // App state
+  let sessionUser = null;
+  let library = []; // rows from Supabase
+  let searchType = "all"; // all | movie | tv
+
+  // =========================
+  // Helpers
+  // =========================
   const esc = (s) =>
     (s ?? "").toString().replace(/[&<>"']/g, (m) => ({
-      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
     }[m]));
 
   function showToast(message) {
-    if (!toast) return;
     toast.classList.remove("hidden");
     toast.querySelector("div").textContent = message;
-    setTimeout(() => toast.classList.add("hidden"), 2600);
+    setTimeout(() => toast.classList.add("hidden"), 2400);
   }
 
-  function lockBodyScroll() {
-    document.documentElement.classList.add("modal-open");
-    document.body.classList.add("modal-open");
-    document.documentElement.style.overscrollBehavior = "none";
-  }
-  function unlockBodyScroll() {
-    document.documentElement.classList.remove("modal-open");
-    document.body.classList.remove("modal-open");
-    document.documentElement.style.overscrollBehavior = "";
-  }
+// Profile menu (mobile-friendly)
+function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
+function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
+
 
   function openModal(html) {
     modalBody.innerHTML = html;
     modal.classList.remove("hidden");
-    lockBodyScroll();
-    // reset scroll to top of modal content
-    modalBody.scrollTop = 0;
   }
   function closeModal() {
     modal.classList.add("hidden");
     modalBody.innerHTML = "";
-    unlockBodyScroll();
   }
-  modal?.addEventListener("click", (e) => {
+  modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
   });
 
-  function closeProfileMenu() { profileMenu?.classList.add("hidden"); }
-  function toggleProfileMenu() { profileMenu?.classList.toggle("hidden"); }
-
-  
-function starsForRating(r){
-  const val = Number(r);
-  if(!Number.isFinite(val)) return "";
-  const five = Math.round((val/2)*2)/2;
-  const full = Math.floor(five);
-  const half = five-full >= 0.5 ? 1 : 0;
-  const empty = 5-full-half;
-  return `${"★".repeat(full)}${half ? "½" : ""}${"☆".repeat(empty)}  (${val.toFixed(1)}/10)`;
-}
-
-function imgUrl(path, size="w500") {
+  function imgUrl(path, size = "w500") {
     if (!path) return null;
     if (size === "orig") return `${TMDB_IMG_ORIG}${path}`;
     return `${TMDB_IMG_500}${path}`;
   }
 
-  // ---- Guard for config corruption
-  function configLooksBad() {
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) return true;
-    // users sometimes paste 'eyJ...xyz' which breaks auth
-    if (SUPABASE_ANON_KEY.includes("...")) return true;
-    return false;
+  function btnActive(el, isActive) {
+    el.classList.toggle("bg-white/10", isActive);
+    el.classList.toggle("border-white/15", isActive);
   }
 
-  // ---- Supabase client
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
-    }
-  });
-
-  // ---- State
-  let sessionUser = null;
-  let library = [];
-  let searchType = "all";
-  let viewMode = localStorage.getItem("nv_view") || "grid";
-
-  // ---- TMDB
+  // =========================
+  // TMDB API
+  // =========================
   async function tmdbFetch(url) {
+    if (!TMDB_API_KEY || TMDB_API_KEY.includes("PASTE_")) {
+      showToast("Add your TMDB key in app.js");
+      throw new Error("TMDB key missing");
+    }
     const res = await fetch(url);
     if (!res.ok) throw new Error(`TMDB error ${res.status}`);
     return res.json();
@@ -151,20 +125,18 @@ function imgUrl(path, size="w500") {
     const q = encodeURIComponent(query);
     const url = `${TMDB_BASE}/search/multi?api_key=${TMDB_API_KEY}&query=${q}&include_adult=false`;
     const data = await tmdbFetch(url);
-    return (data.results || [])
-      .filter(r => {
-        if (searchType === "all") return r.media_type === "movie" || r.media_type === "tv";
-        return r.media_type === searchType;
-      })
-      .map(r => ({
+    const results = (data.results || [])
+      .filter((r) => (searchType === "all" ? (r.media_type === "movie" || r.media_type === "tv") : r.media_type === searchType))
+      .map((r) => ({
         tmdb_id: r.id,
         media_type: r.media_type,
         title: r.media_type === "movie" ? r.title : r.name,
-        year: ((r.media_type === "movie" ? r.release_date : r.first_air_date) || "").split("-")[0] || "",
-        release_date_full: (r.media_type === "movie" ? (r.release_date||"") : (r.first_air_date||"")),
+        year: (r.media_type === "movie" ? r.release_date : r.first_air_date || "").split("-")[0] || "",
         poster_path: r.poster_path,
-        overview: r.overview || ""
+        backdrop_path: r.backdrop_path,
+        overview: r.overview || "",
       }));
+    return results;
   }
 
   async function getDetails(media_type, tmdb_id) {
@@ -172,26 +144,27 @@ function imgUrl(path, size="w500") {
     const url = `${TMDB_BASE}/${endpoint}/${tmdb_id}?api_key=${TMDB_API_KEY}&append_to_response=credits`;
     const d = await tmdbFetch(url);
 
-    const cast = (d.credits?.cast || []).slice(0, 10).map(c => c.name).join(", ");
-    const genres = (d.genres || []).map(g => g.name).join(", ");
-    const runtime =
-      media_type === "movie"
-        ? (d.runtime ? `${d.runtime} min` : "—")
-        : (d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min` : "—");
+    const cast = (d.credits?.cast || []).slice(0, 8).map((c) => c.name).join(", ");
+    const genres = (d.genres || []).map((g) => g.name).join(", ");
+
+    let runtime = "";
+    if (media_type === "movie") runtime = d.runtime ? `${d.runtime} min` : "";
+    if (media_type === "tv") runtime = (d.episode_run_time?.[0] ? `${d.episode_run_time[0]} min` : "");
 
     return {
       tmdb_id: d.id,
+      release_date_full: (media_type === "movie" ? (d.release_date || "") : (d.first_air_date || "")),
       media_type,
       title: media_type === "movie" ? d.title : d.name,
-      year: ((media_type === "movie" ? d.release_date : d.first_air_date) || "").split("-")[0] || "",
-      release_date_full: (media_type === "movie" ? (d.release_date||"") : (d.first_air_date||"")),
+      year: (media_type === "movie" ? d.release_date : d.first_air_date || "").split("-")[0] || "",
       poster_url: imgUrl(d.poster_path),
       backdrop_url: imgUrl(d.backdrop_path, "orig"),
       overview: d.overview || "No overview available.",
       cast: cast || "—",
       genre: genres || "—",
-      runtime,
-      seasons: media_type === "tv" ? (d.seasons || []).filter(s => s.season_number !== 0) : []
+      runtime: runtime || "—",
+      seasons_count: media_type === "tv" ? (d.number_of_seasons || 0) : 0,
+      seasons: media_type === "tv" ? (d.seasons || []).filter(s => s.season_number !== 0) : [],
     };
   }
 
@@ -208,13 +181,48 @@ function imgUrl(path, size="w500") {
     }));
   }
 
-  // ---- DB ops
+  // =========================
+  // Supabase (Library)
+  // =========================
   async function loadLibrary() {
-    if (!sessionUser) return;
+  if (!sessionUser) return;
+
+  // If a collection filter is active, load items through collection_items
+  if (activeCollectionId && activeCollectionId !== "all") {
+    // Try relational fetch first
+    const rel = await supabase
+      .from("collection_items")
+      .select("item_id, media_items(*)")
+      .eq("collection_id", activeCollectionId);
+
+    if (!rel.error && rel.data) {
+      library = rel.data.map(r => r.media_items).filter(Boolean);
+      renderLibrary();
+      return;
+    }
+
+    // Fallback: two-step fetch
+    const { data: ids, error: idErr } = await supabase
+      .from("collection_items")
+      .select("item_id")
+      .eq("collection_id", activeCollectionId);
+
+    if (idErr) {
+      console.error(idErr);
+      showToast("Failed to load collection");
+      return;
+    }
+    const itemIds = (ids || []).map(r => r.item_id);
+    if (!itemIds.length) {
+      library = [];
+      renderLibrary();
+      return;
+    }
     const { data, error } = await supabase
       .from("media_items")
       .select("*")
-      .order("created_at", { ascending: false });
+      .in("id", itemIds);
+
     if (error) {
       console.error(error);
       showToast("Failed to load library");
@@ -222,57 +230,69 @@ function imgUrl(path, size="w500") {
     }
     library = data || [];
     renderLibrary();
+    return;
   }
 
-  async function tryUpsert(payload) {
-    // Schema-resilient upsert: retry if column mismatch
-    const attempts = [];
+  const { data, error } = await supabase
+    .from("media_items")
+    .select("*")
+    .order("created_at", { ascending: false });
 
-    // base attempt
-    attempts.push(payload);
-
-    // if payload has cast_list, try cast instead
-    if ("cast_list" in payload) {
-      const p = { ...payload };
-      p.cast = p.cast_list;
-      delete p.cast_list;
-      attempts.push(p);
-    }
-    // if payload has cast, try cast_list instead
-    if ("cast" in payload) {
-      const p = { ...payload };
-      p.cast_list = p.cast;
-      delete p.cast;
-      attempts.push(p);
-    }
-    // if release_date might break, try without it
-    if ("release_date" in payload) {
-      const p = { ...payload };
-      delete p.release_date;
-      attempts.push(p);
-    }
-
-    for (const p of attempts) {
-      const { error } = await supabase.from("media_items").upsert(p, {
-        onConflict: "user_id,tmdb_id,media_type,scope,season_number,episode_number"
-      });
-      if (!error) return true;
-      console.error(error);
-      // continue trying alternatives
-    }
-    return false;
+  if (error) {
+    console.error(error);
+    showToast("Failed to load library");
+    return;
   }
+  library = data || [];
+  renderLibrary();
+}
 
   async function upsertItem(payload) {
-    const ok = await tryUpsert(payload);
-    if (!ok) {
-      showToast("Save failed");
-      return false;
+  // payload must include: user_id, tmdb_id, media_type, scope, title
+  const attempt = async (p) => supabase.from("media_items").upsert(p, {
+    onConflict: "user_id,tmdb_id,media_type,scope,season_number,episode_number"
+  });
+
+  let { error } = await attempt(payload);
+
+  // If schema mismatch (cast vs cast_list, or release_date column missing), retry with safer payload
+  if (error) {
+    const msg = (error.message || "").toLowerCase();
+
+    // cast_list column missing -> retry with cast
+    if (msg.includes('column') && msg.includes('cast_list') && msg.includes('does not exist')) {
+      const { cast_list, ...rest } = payload;
+      ({ error } = await attempt({ ...rest, cast: cast_list ?? null }));
     }
-    await loadLibrary();
-    showToast("Saved");
-    return true;
+
+    // cast column missing -> retry with cast_list
+    if (error) {
+      const msg2 = (error.message || "").toLowerCase();
+      if (msg2.includes('column') && msg2.includes('cast') && msg2.includes('does not exist')) {
+        const { cast, ...rest } = payload;
+        ({ error } = await attempt({ ...rest, cast_list: cast ?? null }));
+      }
+    }
+
+    // release_date missing -> drop it and retry
+    if (error) {
+      const msg3 = (error.message || "").toLowerCase();
+      if (msg3.includes('column') && msg3.includes('release_date') && msg3.includes('does not exist')) {
+        const { release_date, ...rest } = payload;
+        ({ error } = await attempt(rest));
+      }
+    }
   }
+
+  if (error) {
+    console.error(error);
+    showToast("Save failed");
+    return false;
+  }
+  await loadLibrary();
+  showToast("Saved");
+  return true;
+}
 
   async function deleteItem(rowId) {
     const { error } = await supabase.from("media_items").delete().eq("id", rowId);
@@ -286,115 +306,147 @@ function imgUrl(path, size="w500") {
     return true;
   }
 
-  // ---- Filters + sorting
-  function libraryFiltersMatch(row) {
-    const scopeOk = (filterScope?.value || "all") === "all" || row.scope === filterScope.value;
-    const typeOk = (filterMediaType?.value || "all") === "all" || row.media_type === filterMediaType.value;
-    const formatOk = (filterFormat?.value || "all") === "all" || (row.format || "Digital") === filterFormat.value;
+  // =========================
+  // Rendering
+  // =========================
+  function renderSearchResults(items) {
+    if (!items.length) {
+      searchResults.innerHTML = `<div class="p-4 text-sm text-white/70">No results</div>`;
+      searchResults.classList.remove("hidden");
+      return;
+    }
 
-    const minR = Number(minRating?.value || 0);
-    const rv = row.rating === null || row.rating === undefined || row.rating === "" ? null : Number(row.rating);
-    const ratingOk = minR === 0 || (rv !== null && rv >= minR);
+    searchResults.innerHTML = items.map((it) => {
+      const poster = it.poster_path ? imgUrl(it.poster_path) : null;
+      const badge = it.media_type === "tv" ? "TV" : "Movie";
+      return `
+        <button class="w-full text-left p-4 flex items-center gap-4 hover:bg-white/5 transition border-b border-white/10 last:border-b-0"
+          data-id="${it.tmdb_id}" data-type="${it.media_type}">
+          <div class="w-12 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex-shrink-0">
+            ${poster ? `<img src="${poster}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center text-xl">🎬</div>`}
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold truncate">${esc(it.title)}</div>
+            <div class="text-xs text-white/65 mt-0.5">${esc(it.year)} • <span class="chip px-2 py-0.5 rounded-full">${badge}</span></div>
+            ${it.overview ? `<div class="text-xs text-white/60 mt-1 line-clamp-2">${esc(it.overview)}</div>` : ""}
+          </div>
+          <div class="text-white/60">›</div>
+        </button>
+      `;
+    }).join("");
 
-    const q = (librarySearch?.value || "").trim().toLowerCase();
-    const hay = [
-      row.title,
-      row.comment,
-      row.genre,
-      row.cast_list || row.cast,
-      row.overview,
-      row.year,
-      row.format
-    ].map(v => (v || "").toString().toLowerCase());
-    const searchOk = !q || hay.some(v => v.includes(q));
+    searchResults.classList.remove("hidden");
 
-    return scopeOk && typeOk && formatOk && ratingOk && searchOk;
+    [...searchResults.querySelectorAll("button[data-id]")].forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const tmdb_id = Number(btn.dataset.id);
+        const media_type = btn.dataset.type;
+        await showAddFlow(media_type, tmdb_id);
+      });
+    });
   }
 
-  function toTime(v){
-  if(!v) return 0;
-  const t = Date.parse(v);
-  return Number.isFinite(t) ? t : 0;
+  function libraryFiltersMatch(row) {
+  const scopeOk = filterScope.value === "all" || row.scope === filterScope.value;
+  const typeOk = filterMediaType.value === "all" || row.media_type === filterMediaType.value;
+  const formatOk = filterFormat.value === "all" || (row.format || "Digital") === filterFormat.value;
+
+  const minR = Number(minRating?.value || 0);
+  const ratingVal = row.rating === null || row.rating === undefined || row.rating === "" ? null : Number(row.rating);
+  const ratingOk = minR === 0 || (ratingVal !== null && ratingVal >= minR);
+
+  const q = (librarySearch?.value || "").trim().toLowerCase();
+  const searchOk = !q || [
+    row.title,
+    row.comment,
+    row.genre,
+    row.cast_list,
+    row.overview,
+    row.year,
+    row.format
+  ].some(v => (v || "").toString().toLowerCase().includes(q));
+
+  return scopeOk && typeOk && formatOk && ratingOk && searchOk;
 }
 
+
 function sortLibraryRows(rows) {
+  const mode = (sortBy?.value || "added_desc");
 
-    const mode = (sortBy?.value || "added_desc");
-    const parseYear = (y) => {
-      const n = parseInt((y||"").toString().slice(0,4), 10);
-      return Number.isFinite(n) ? n : 0;
-    };
-    const ratingNum = (r) => {
-      const v = r.rating;
-      if (v === null || v === undefined || v === "") return -1;
-      const n = Number(v);
-      return Number.isFinite(n) ? n : -1;
-    };
-    const dateNum = (r) => {
-      const d = (r.release_date || "").toString();
-      if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return Date.parse(d) || 0;
-      return parseYear(r.year) * 365 * 24 * 3600 * 1000;
-    };
-    const out = [...rows];
-    out.sort((a,b) => {
-      switch(mode) {
-        case "added_asc": return toTime(a.created_at) - toTime(b.created_at);
-        case "release_desc": return dateNum(b) - dateNum(a);
-        case "release_asc": return dateNum(a) - dateNum(b);
-        case "rating_desc": return ratingNum(b) - ratingNum(a);
-        case "rating_asc": return ratingNum(a) - ratingNum(b);
-        case "title_desc": return (b.title||"").localeCompare(a.title||"");
-        case "title_asc":
-        default: return (a.title||"").localeCompare(b.title||"");
-      }
-    });
-    return out;
-  }
+  const toNumYear = (y) => {
+    const n = parseInt((y || "").toString().slice(0,4), 10);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const toDateNum = (r) => {
+    // if release_date exists and is YYYY-MM-DD
+    const d = (r.release_date || "").toString();
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) return Date.parse(d) || 0;
+    // fallback: year only
+    return toNumYear(r.year) * 365 * 24 * 3600 * 1000;
+  };
+  const ratingNum = (r) => {
+    const v = r.rating;
+    if (v === null || v === undefined || v === "") return -1;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : -1;
+  };
 
-  function renderLibrary() {
-    const filtered = sortLibraryRows((library||[]).filter(libraryFiltersMatch));
-    if (statsText) statsText.textContent = `${filtered.length} item${filtered.length===1?"":"s"} (of ${library.length})`;
+  const coll = [...rows];
+  coll.sort((a,b) => {
+    switch (mode) {
+      case "added_asc": return toTime(a.created_at) - toTime(b.created_at);
+      case "release_desc": return toDateNum(b) - toDateNum(a);
+      case "release_asc": return toDateNum(a) - toDateNum(b);
+      case "rating_desc": return ratingNum(b) - ratingNum(a);
+      case "rating_asc": return ratingNum(a) - ratingNum(b);
+      case "title_asc": return (a.title||"").localeCompare(b.title||"");
+      case "title_desc": return (b.title||"").localeCompare(a.title||"");
+      case "added_desc":
+        default: return toTime(b.created_at) - toTime(a.created_at);
+    }
+  });
+  return coll;
+}
+
+function renderLibrary() {
+    const filtered = sortLibraryRows(library.filter(libraryFiltersMatch));
+
+    statsText.textContent = `${filtered.length} item${filtered.length === 1 ? "" : "s"} (of ${library.length})`;
 
     if (!filtered.length) {
       grid.innerHTML = "";
-      emptyState?.classList.remove("hidden");
+      emptyState.classList.remove("hidden");
       return;
     }
-    emptyState?.classList.add("hidden");
-    if (viewMode === "list") {
-      grid?.classList.add("hidden");
-      list?.classList.remove("hidden");
-    } else {
-      list?.classList.add("hidden");
-      grid?.classList.remove("hidden");
-    }
+    emptyState.classList.add("hidden");
 
-    grid.innerHTML = filtered.map(row => {
+    grid.innerHTML = filtered.map((row) => {
       const poster = row.poster_url || "";
-      const scopeLabel =
+      const typeEmoji = row.media_type === "tv" ? "📺" : "🎬";
+      const scopeBadge =
+        row.scope === "title" ? "Title" :
         row.scope === "season" ? `Season ${row.season_number}` :
-        row.scope === "episode" ? `S${row.season_number}E${row.episode_number}` :
-        "Title";
-
-      const subtitle =
-        row.scope === "title" ? "" :
-        `<div class="text-xs text-white/60 mt-1 truncate">${esc(scopeLabel)}</div>`;
+        `S${row.season_number}E${row.episode_number}`;
 
       const rating = (row.rating ?? null);
       return `
-        <button class="poster-card rounded-2xl overflow-hidden text-left" data-rowid="${row.id}">
+        <button class="poster-card rounded-2xl overflow-hidden text-left"
+          data-rowid="${row.id}">
           <div class="relative">
             <div class="aspect-[2/3] bg-black/25">
-              ${poster ? `<img src="${esc(poster)}" class="w-full h-full object-cover" loading="lazy" />`
-                        : `<div class="w-full h-full flex items-center justify-center text-3xl">🎬</div>`}
+              ${poster
+                ? `<img src="${esc(poster)}" class="w-full h-full object-cover" loading="lazy" />`
+                : `<div class="w-full h-full flex items-center justify-center text-3xl">🎬</div>`}
             </div>
-            <div class="absolute top-2 left-2 chip px-2 py-1 rounded-xl text-xs">${row.media_type==="tv"?"📺":"🎬"} ${esc(scopeLabel)}</div>
-            ${rating !== null && rating !== undefined && rating !== "" ? `<div class="absolute top-2 right-2 chip px-2 py-1 rounded-xl text-xs">⭐ ${rating}/10</div>` : ""}
+            <div class="absolute top-2 left-2 chip px-2 py-1 rounded-xl text-xs">${typeEmoji} ${scopeBadge}</div>
+            ${rating !== null && rating !== undefined && rating !== ""
+              ? `<div class="absolute top-2 right-2 chip px-2 py-1 rounded-xl text-xs">⭐ ${rating}/10</div>`
+              : ""}
           </div>
           <div class="p-3">
             <div class="font-semibold text-sm truncate">${esc(row.title)}</div>
-            ${subtitle}
-            <div class="text-xs text-white/65 mt-2 flex items-center justify-between gap-2">
+            ${row.scope !== "title" ? `<div class="text-xs text-white/70 mt-0.5 truncate">${esc(row.scope === "season" ? `Season ${row.season_number}` : `S${row.season_number}E${row.episode_number}`)}</div>` : ""}
+            <div class="text-xs text-white/65 mt-1 flex items-center justify-between gap-2">
               <span class="truncate">${esc(row.year || "")}</span>
               <span class="chip px-2 py-0.5 rounded-full">${esc(row.format || "Digital")}</span>
             </div>
@@ -410,45 +462,356 @@ function sortLibraryRows(rows) {
         if (row) showItemModal(row);
       });
     });
-// List view
-if (list) {
-  list.innerHTML = filtered.map((row) => {
-    const scopeLabel =
-      row.scope === "title" ? (row.media_type === "tv" ? "Series" : "Movie") :
-      row.scope === "season" ? `Season ${row.season_number}` :
-      `S${row.season_number}E${row.episode_number}`;
-    const rating = (row.rating ?? null);
+  }
+
+  // =========================
+  // Add / Edit flows
+  // =========================
+  async function showAddFlow(media_type, tmdb_id) {
+    openModal(`
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="text-lg font-semibold">Loading details…</div>
+          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+        </div>
+        <div class="grid md:grid-cols-[160px,1fr] gap-4">
+          <div class="rounded-2xl overflow-hidden border border-white/10 skeleton aspect-[2/3]"></div>
+          <div class="space-y-3">
+            <div class="h-6 w-2/3 rounded-xl skeleton"></div>
+            <div class="h-4 w-1/2 rounded-xl skeleton"></div>
+            <div class="h-4 w-full rounded-xl skeleton"></div>
+            <div class="h-4 w-full rounded-xl skeleton"></div>
+          </div>
+        </div>
+      </div>
+    `);
+    document.getElementById("mClose").addEventListener("click", closeModal);
+
+    const d = await getDetails(media_type, tmdb_id);
+
+    // default form fields
+    const defaultFormat = "Digital";
+    const defaultRating = "";
+    const defaultComment = "";
+
+    const titleBadge = d.media_type === "tv" ? "TV" : "Movie";
+    const poster = d.poster_url ? `<img src="${esc(d.poster_url)}" class="w-full h-full object-cover" />` :
+      `<div class="w-full h-full flex items-center justify-center text-4xl">🎬</div>`;
+
+    const tvControls = d.media_type === "tv" ? `
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="flex items-center justify-between">
+          <div class="font-semibold">TV Options</div>
+          <div class="text-xs text-white/60">${d.seasons_count} seasons</div>
+        </div>
+
+        <div class="mt-3 flex flex-col md:flex-row gap-2">
+          <button id="addSeriesBtn" class="btn rounded-2xl px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
+            Add entire series
+          </button>
+
+          <select id="seasonSelect" class="rounded-2xl px-3 py-2 input flex-1">
+            ${d.seasons.map(s => `<option value="${s.season_number}">Season ${s.season_number}${s.name ? ` • ${esc(s.name)}` : ""}</option>`).join("")}
+          </select>
+
+          <button id="loadSeasonBtn" class="btn chip rounded-2xl px-4 py-2">Pick episodes</button>
+        </div>
+
+        <div id="seasonPicker" class="hidden mt-4"></div>
+      </div>
+    ` : "";
+
+    openModal(`
+      <div class="space-y-5">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-xs uppercase tracking-[0.25em] text-white/60">${titleBadge}</div>
+            <div class="text-2xl font-semibold">${esc(d.title)} <span class="text-white/60 font-normal">(${esc(d.year)})</span></div>
+            <div class="text-sm text-white/70 mt-1">${esc(d.runtime)} • ${esc(d.genre)}</div>
+          </div>
+          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+        </div>
+
+        <div class="grid md:grid-cols-[170px,1fr] gap-5">
+          <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">
+            ${poster}
+          </div>
+
+          <div class="space-y-4">
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm text-white/70">Cast</div>
+              <div class="text-sm mt-1">${esc(d.cast)}</div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm text-white/70">Overview</div>
+              <div class="text-sm mt-1 leading-relaxed text-white/85">${esc(d.overview)}</div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10" id="itemCollectionsPanel">
+              <div class="text-sm text-white/70 flex items-center justify-between">
+                <span>Collections</span>
+                <button id="manageCollectionsInline" class="btn chip rounded-xl px-2 py-1 text-xs">Manage</button>
+              </div>
+              <div id="itemCollectionsList" class="mt-2 text-sm text-white/70">Loading…</div>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-3">
+
+              <div>
+                <label class="text-xs text-white/70">Format</label>
+                <select id="format" class="mt-1 w-full rounded-2xl px-3 py-2 input">
+                  ${["Blu-ray","DVD","Digital","4K Ultra HD","VHS"].map(v => `<option value="${v}" ${v===defaultFormat?"selected":""}>${v}</option>`).join("")}
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-white/70">Rating (0-10)</label>
+                <input id="rating" type="number" min="0" max="10" step="0.5" value="${defaultRating}"
+                  class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+              </div>
+              <div>
+                <label class="text-xs text-white/70">Scope</label>
+                <select id="scope" class="mt-1 w-full rounded-2xl px-3 py-2 input">
+                  <option value="title" selected>${d.media_type === "tv" ? "Series" : "Movie"}</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs text-white/70">Comment</label>
+              <textarea id="comment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="What did you think?">${esc(defaultComment)}</textarea>
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-2">
+              <button id="saveTitleBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+                Save to library
+              </button>
+              <button id="cancelBtn" class="btn chip rounded-2xl px-4 py-2">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        ${tvControls}
+      </div>
+    `);
+
+    document.getElementById("mClose").addEventListener("click", closeModal);
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+
+// Collections membership UI
+const listEl = document.getElementById("itemCollectionsList");
+const manageInline = document.getElementById("manageCollectionsInline");
+manageInline?.addEventListener("click", async () => {
+  closeModal();
+  await loadCollections();
+  openCollectionsManager();
+});
+
+(async () => {
+  if (!collections.length) {
+    if (listEl) listEl.innerHTML = `<div class="text-xs text-white/60">No collections yet.</div>`;
+    return;
+  }
+  const memberIds = new Set(await getItemCollectionIds(row.id));
+  if (!listEl) return;
+  listEl.innerHTML = collections.map(c => {
+    const checked = memberIds.has(c.id) ? "checked" : "";
     return `
-      <button class="w-full text-left p-4 flex items-center gap-4 hover:bg-white/5 transition border-b border-white/10 last:border-b-0" data-rowid="${row.id}">
-        <div class="w-12 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex-shrink-0">
-          ${row.poster_url ? `<img src="${esc(row.poster_url)}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center text-xl">🎬</div>`}
-        </div>
-        <div class="flex-1 min-w-0">
-          <div class="font-semibold truncate">${esc(row.title)}</div>
-          <div class="text-xs text-white/60 mt-0.5 truncate">${esc(scopeLabel)} • ${esc(row.year || "")} • ${esc(row.format || "Digital")}</div>
-          ${rating !== null && rating !== undefined && rating !== "" ? `<div class="text-xs text-white/70 mt-1">⭐ ${Number(rating).toFixed(1)}/10</div>` : ""}
-        </div>
-        <div class="text-white/60">›</div>
-      </button>
+      <label class="flex items-center gap-2 py-1">
+        <input type="checkbox" data-col="${c.id}" ${checked} />
+        <span class="truncate">${esc(c.name)}</span>
+      </label>
     `;
   }).join("");
 
-  [...list.querySelectorAll("button[data-rowid]")].forEach(card => {
-    card.addEventListener("click", () => {
-      const rowId = Number(card.dataset.rowid);
-      const row = library.find(r => r.id === rowId);
-      if (row) showItemModal(row);
+  [...listEl.querySelectorAll("input[type=checkbox][data-col]")].forEach(cb => {
+    cb.addEventListener("change", async () => {
+      const colId = cb.dataset.col;
+      if (cb.checked) await addItemToCollection(row.id, colId);
+      else await removeItemFromCollection(row.id, colId);
+      showToast("Updated");
     });
   });
+})();
+
+    // Save title/movie/series row
+    document.getElementById("saveTitleBtn").addEventListener("click", async () => {
+      const format = document.getElementById("format").value;
+      const ratingRaw = document.getElementById("rating").value;
+      const rating = ratingRaw === "" ? null : Number(ratingRaw);
+      const comment = document.getElementById("comment").value;
+
+      const payload = {
+        user_id: sessionUser.id,
+        tmdb_id: d.tmdb_id,
+        media_type: d.media_type,
+        scope: "title",
+        title: d.title,
+        year: d.year,
+        poster_url: d.poster_url || null,
+        backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
+        rating,
+        comment,
+        genre: d.genre,
+        cast_list: d.cast,
+        overview: d.overview,
+        runtime: d.runtime,
+        season_number: null,
+        episode_number: null,
+      };
+
+      const ok = await upsertItem(payload);
+      if (ok) closeModal();
+    });
+
+    // TV: add series button + pick episodes
+    if (d.media_type === "tv") {
+      const addSeriesBtn = document.getElementById("addSeriesBtn");
+      const loadSeasonBtn = document.getElementById("loadSeasonBtn");
+      const seasonSelect = document.getElementById("seasonSelect");
+      const seasonPicker = document.getElementById("seasonPicker");
+
+      addSeriesBtn.addEventListener("click", async () => {
+        // same as saveTitleBtn but explicit series naming
+        document.getElementById("scope").value = "title";
+        document.getElementById("saveTitleBtn").click();
+      });
+
+      loadSeasonBtn.addEventListener("click", async () => {
+        const season_number = Number(seasonSelect.value);
+        seasonPicker.classList.remove("hidden");
+        // Bring episode picker into view on mobile
+        seasonPicker.scrollIntoView({ behavior: "smooth", block: "start" });
+        seasonPicker.innerHTML = `
+          <div class="glass rounded-2xl p-4 border border-white/10 picker-card">
+            <div class="flex items-center justify-between">
+              <div class="font-semibold">Season ${season_number}</div>
+              <button id="closeSeasonPicker" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Hide</button>
+            </div>
+            <div id="episodesStatus" class="mt-3 text-sm text-white/70"><span id="episodesStatus">Loading episodes…</span></div>
+            <div class="mt-4 space-y-2 max-h-[50vh] overflow-y-auto pr-1" id="epList"></div>
+          </div>
+        `;
+        document.getElementById("closeSeasonPicker").addEventListener("click", () => {
+          seasonPicker.classList.add("hidden");
+        });
+
+        let episodes = [];
+const epList = document.getElementById("epList");
+const status = document.getElementById("episodesStatus");
+try {
+  episodes = await getSeasonEpisodes(d.tmdb_id, season_number);
+  if (status) status.textContent = "";
+} catch (e) {
+  console.error(e);
+  if (status) status.textContent = "Failed to load episodes. Check your TMDB key and try again.";
+  epList.innerHTML = "";
+  return;
 }
+
+        if (!episodes.length) {
+          epList.innerHTML = `<div class="text-sm text-white/60">No episodes found.</div>`;
+          return;
+        }
+
+        // Add season button
+        epList.innerHTML = `
+          <div class="flex flex-col md:flex-row md:items-center gap-2 mb-3">
+            <button id="addSeasonBtn" class="btn rounded-2xl px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
+              Add entire season ${season_number}
+            </button>
+            <div class="text-xs text-white/60">Adds a season entry; you can also add individual episodes below.</div>
+          </div>
+        ` + episodes.map(ep => {
+          const still = ep.still_path ? `<img src="${esc(imgUrl(ep.still_path))}" class="w-14 h-10 object-cover rounded-xl border border-white/10" />`
+            : `<div class="w-14 h-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">🎞️</div>`;
+          return `
+            <div class="glass rounded-2xl p-3 border border-white/10 flex items-center gap-3">
+              ${still}
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-semibold truncate">E${ep.episode_number} • ${esc(ep.name)}</div>
+                <div class="text-xs text-white/60 truncate">${esc(ep.air_date || "")}</div>
+              </div>
+              <button class="btn chip rounded-2xl px-3 py-1.5 text-sm" data-add-ep="${ep.episode_number}">
+                Add
+              </button>
+            </div>
+          `;
+        }).join("");
+
+        document.getElementById("addSeasonBtn").addEventListener("click", async () => {
+          const format = document.getElementById("format").value;
+          const ratingRaw = document.getElementById("rating").value;
+          const rating = ratingRaw === "" ? null : Number(ratingRaw);
+          const comment = document.getElementById("comment").value;
+
+          const payload = {
+            user_id: sessionUser.id,
+            tmdb_id: d.tmdb_id,
+            media_type: "tv",
+            scope: "season",
+            title: d.title,
+            year: d.year,
+            poster_url: d.poster_url || null,
+            backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
+            rating,
+            comment,
+            genre: d.genre,
+            cast_list: d.cast,
+            overview: d.overview,
+            runtime: d.runtime,
+            season_number,
+            episode_number: null,
+          };
+          await upsertItem(payload);
+        });
+
+        [...epList.querySelectorAll("button[data-add-ep]")].forEach(b => {
+          b.addEventListener("click", async () => {
+            const episode_number = Number(b.dataset.addEp);
+            const format = document.getElementById("format").value;
+            const ratingRaw = document.getElementById("rating").value;
+            const rating = ratingRaw === "" ? null : Number(ratingRaw);
+            const comment = document.getElementById("comment").value;
+
+            const ep = episodes.find(e => e.episode_number === episode_number);
+
+            const payload = {
+              user_id: sessionUser.id,
+              tmdb_id: d.tmdb_id,
+              media_type: "tv",
+              scope: "episode",
+              title: d.title,
+              year: d.year,
+              poster_url: d.poster_url || null,
+              backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
+              rating,
+              comment,
+              genre: d.genre,
+              cast_list: d.cast,
+              overview: ep?.overview || d.overview,
+              runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
+              season_number,
+              episode_number,
+            };
+            await upsertItem(payload);
+          });
+        });
+      });
+    }
   }
 
-  // ---- Modals: view/edit item
   function showItemModal(row) {
     const titleLine =
+      row.scope === "title" ? row.title :
       row.scope === "season" ? `${row.title} • Season ${row.season_number}` :
-      row.scope === "episode" ? `${row.title} • S${row.season_number}E${row.episode_number}` :
-      row.title;
+      `${row.title} • S${row.season_number}E${row.episode_number}`;
 
     const poster = row.poster_url
       ? `<img src="${esc(row.poster_url)}" class="w-full h-full object-cover" />`
@@ -466,7 +829,9 @@ if (list) {
         </div>
 
         <div class="grid md:grid-cols-[170px,1fr] gap-5">
-          <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">${poster}</div>
+          <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">
+            ${poster}
+          </div>
 
           <div class="space-y-4">
             <div class="glass rounded-2xl p-4 border border-white/10">
@@ -479,7 +844,16 @@ if (list) {
               <div class="text-sm mt-1">${esc((row.cast_list || row.cast) || "—")}</div>
             </div>
 
+            <div class="glass rounded-2xl p-4 border border-white/10" id="itemCollectionsPanel">
+              <div class="text-sm text-white/70 flex items-center justify-between">
+                <span>Collections</span>
+                <button id="manageCollectionsInline" class="btn chip rounded-xl px-2 py-1 text-xs">Manage</button>
+              </div>
+              <div id="itemCollectionsList" class="mt-2 text-sm text-white/70">Loading…</div>
+            </div>
+
             <div class="grid md:grid-cols-3 gap-3">
+
               <div>
                 <label class="text-xs text-white/70">Format</label>
                 <select id="eFormat" class="mt-1 w-full rounded-2xl px-3 py-2 input">
@@ -487,13 +861,13 @@ if (list) {
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating</label>
-                <input id="eRating" type="range" min="0" max="10" step="0.5" value="${row.rating ?? 0}" class="mt-1 w-full" />
-<div id="eRatingStars" class="mt-1 text-sm text-white/80"></div>
+                <label class="text-xs text-white/70">Rating (0-10)</label>
+                <input id="eRating" type="number" min="0" max="10" step="0.5" value="${row.rating ?? ""}"
+                  class="mt-1 w-full rounded-2xl px-3 py-2 input" />
               </div>
               <div>
-                <label class="text-xs text-white/70">Entry</label>
-                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${row.scope}" disabled />
+                <label class="text-xs text-white/70">Scope</label>
+                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(row.scope)}" disabled />
               </div>
             </div>
 
@@ -519,33 +893,51 @@ if (list) {
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
-    const eRatingEl = document.getElementById("eRating");
-    const eRatingStarsEl = document.getElementById("eRatingStars");
-    const updateERatingStars = () => { if(eRatingStarsEl) eRatingStarsEl.textContent = starsForRating(eRatingEl?.value || 0); };
-    eRatingEl?.addEventListener("input", updateERatingStars);
-    updateERatingStars();
+// Collections membership UI
+const listEl = document.getElementById("itemCollectionsList");
+const manageInline = document.getElementById("manageCollectionsInline");
+manageInline?.addEventListener("click", async () => {
+  closeModal();
+  await loadCollections();
+  openCollectionsManager();
+});
+
+(async () => {
+  if (!collections.length) {
+    if (listEl) listEl.innerHTML = `<div class="text-xs text-white/60">No collections yet.</div>`;
+    return;
+  }
+  const memberIds = new Set(await getItemCollectionIds(row.id));
+  if (!listEl) return;
+  listEl.innerHTML = collections.map(c => {
+    const checked = memberIds.has(c.id) ? "checked" : "";
+    return `
+      <label class="flex items-center gap-2 py-1">
+        <input type="checkbox" data-col="${c.id}" ${checked} />
+        <span class="truncate">${esc(c.name)}</span>
+      </label>
+    `;
+  }).join("");
+
+  [...listEl.querySelectorAll("input[type=checkbox][data-col]")].forEach(cb => {
+    cb.addEventListener("change", async () => {
+      const colId = cb.dataset.col;
+      if (cb.checked) await addItemToCollection(row.id, colId);
+      else await removeItemFromCollection(row.id, colId);
+      showToast("Updated");
+    });
+  });
+})();
 
     document.getElementById("saveBtn").addEventListener("click", async () => {
       const format = document.getElementById("eFormat").value;
       const ratingRaw = document.getElementById("eRating").value;
-      const ratingNum = Number(ratingRaw);
-      const rating = Number.isFinite(ratingNum) ? ratingNum : null;
+      const rating = ratingRaw === "" ? null : Number(ratingRaw);
       const comment = document.getElementById("eComment").value;
 
-      const { error } = await supabase
-        .from("media_items")
-        .update({ format, rating, comment })
-        .eq("id", row.id);
-
-      if (error) {
-        console.error(error);
-        showToast("Save failed");
-        return;
-      }
-
-      await loadLibrary();
-      showToast("Saved");
-      closeModal();
+      const payload = { ...row, format, rating, comment };
+      const ok = await upsertItem(payload);
+      if (ok) closeModal();
     });
 
     document.getElementById("delBtn").addEventListener("click", async () => {
@@ -554,297 +946,114 @@ if (list) {
     });
   }
 
-  // ---- Add flow
-  async function showAddFlow(media_type, tmdb_id) {
-    openModal(`
-      <div class="space-y-4">
-        <div class="flex items-center justify-between">
-          <div class="text-lg font-semibold">Loading…</div>
-          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
-        </div>
-        <div class="text-sm text-white/70">Fetching details from TMDB…</div>
-      </div>
-    `);
-    document.getElementById("mClose").addEventListener("click", closeModal);
-
-    let d;
+  // =========================
+  // Auth
+  // =========================
+  async function refreshSessionUI() {
+    let data;
     try {
-      d = await getDetails(media_type, tmdb_id);
+      ({ data } = await supabase.auth.getSession());
     } catch (e) {
       console.error(e);
-      openModal(`<div class="space-y-3"><div class="text-lg font-semibold">Couldn’t load details</div><div class="text-sm text-white/70">TMDB request failed.</div><button id="mClose" class="btn chip rounded-2xl px-3 py-2">Close</button></div>`);
-      document.getElementById("mClose").addEventListener("click", closeModal);
+      showToast("Auth error");
+      data = { session: null };
+    }
+    sessionUser = data.session?.user || null;
+
+    if (!sessionUser) {
+      authPanel.classList.remove("hidden");
+      appPanel.classList.add("hidden");
+      profileBtn?.classList.add("hidden");
+      closeProfileMenu();
       return;
     }
 
-    const poster = d.poster_url
-      ? `<img src="${esc(d.poster_url)}" class="w-full h-full object-cover" />`
-      : `<div class="w-full h-full flex items-center justify-center text-4xl">🎬</div>`;
-
-    const tvControls = d.media_type === "tv" ? `
-      <div class="glass rounded-2xl p-4 border border-white/10">
-        <div class="flex items-center justify-between">
-          <div class="font-semibold">TV Options</div>
-          <div class="text-xs text-white/60">${d.seasons.length} seasons</div>
-        </div>
-
-        <div class="mt-3 flex flex-col md:flex-row gap-2">
-          <button id="addSeriesBtn" class="btn rounded-2xl px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
-            Add entire series
-          </button>
-
-          <select id="seasonSelect" class="rounded-2xl px-3 py-2 input flex-1">
-            ${d.seasons.map(s => `<option value="${s.season_number}">Season ${s.season_number}${s.name ? ` • ${esc(s.name)}` : ""}</option>`).join("")}
-          </select>
-
-          <button id="loadSeasonBtn" class="btn chip rounded-2xl px-4 py-2">Pick episodes</button>
-        </div>
-
-        <div id="seasonPicker" class="hidden mt-4">
-          <div class="text-sm text-white/70" id="episodesStatus">Pick a season and load episodes.</div>
-        </div>
-      </div>
-    ` : "";
-
-    openModal(`
-      <div class="space-y-5">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-xs uppercase tracking-[0.25em] text-white/60">${d.media_type === "tv" ? "TV" : "MOVIE"}</div>
-            <div class="text-2xl font-semibold">${esc(d.title)} <span class="text-white/60 font-normal">(${esc(d.year)})</span></div>
-            <div class="text-sm text-white/70 mt-1">${esc(d.runtime)} • ${esc(d.genre)}</div>
-          </div>
-          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
-        </div>
-
-        <div class="grid md:grid-cols-[170px,1fr] gap-5">
-          <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">${poster}</div>
-
-          <div class="space-y-4">
-            <div class="glass rounded-2xl p-4 border border-white/10">
-              <div class="text-sm text-white/70">Cast</div>
-              <div class="text-sm mt-1">${esc(d.cast)}</div>
-            </div>
-
-            <div class="glass rounded-2xl p-4 border border-white/10">
-              <div class="text-sm text-white/70">Overview</div>
-              <div class="text-sm mt-1 leading-relaxed text-white/85">${esc(d.overview)}</div>
-            </div>
-
-            <div class="grid md:grid-cols-3 gap-3">
-              <div>
-                <label class="text-xs text-white/70">Format</label>
-                <select id="format" class="mt-1 w-full rounded-2xl px-3 py-2 input">
-                  ${["Blu-ray","DVD","Digital","4K Ultra HD","VHS"].map(v => `<option value="${v}" ${v==="Digital"?"selected":""}>${v}</option>`).join("")}
-                </select>
-              </div>
-              <div>
-                <label class="text-xs text-white/70">Rating</label>
-                <input id="rating" type="range" min="0" max="10" step="0.5" value="0" class="mt-1 w-full" />
-<div id="ratingStars" class="mt-1 text-sm text-white/80"></div>
-              </div>
-              <div>
-                <label class="text-xs text-white/70">Entry</label>
-                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${d.media_type === "tv" ? "Series" : "Movie"}" disabled />
-              </div>
-            </div>
-
-            <div>
-              <label class="text-xs text-white/70">Comment</label>
-              <textarea id="comment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="What did you think?"></textarea>
-            </div>
-
-            <div class="flex flex-col md:flex-row gap-2">
-              <button id="saveTitleBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
-                Save to library
-              </button>
-              <button id="cancelBtn" class="btn chip rounded-2xl px-4 py-2">Cancel</button>
-            </div>
-          </div>
-        </div>
-
-        ${tvControls}
-      </div>
-    `);
-
-    document.getElementById("mClose").addEventListener("click", closeModal);
-    document.getElementById("cancelBtn").addEventListener("click", closeModal);
-
-    const buildCommon = () => {
-      const format = document.getElementById("format").value;
-      const ratingRaw = document.getElementById("rating").value;
-      const ratingNum = Number(ratingRaw);
-      const rating = Number.isFinite(ratingNum) ? ratingNum : null;
-      const comment = document.getElementById("comment").value;
-      const releasePart = USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {};
-      return { format, rating, comment, releasePart };
-    };
-
-    const ratingEl = document.getElementById("rating");
-    const ratingStarsEl = document.getElementById("ratingStars");
-    const updateRatingStars = () => { if(ratingStarsEl) ratingStarsEl.textContent = starsForRating(ratingEl?.value || 0); };
-    ratingEl?.addEventListener("input", updateRatingStars);
-    updateRatingStars();
-
-    document.getElementById("saveTitleBtn").addEventListener("click", async () => {
-      const { format, rating, comment, releasePart } = buildCommon();
-      const payload = {
-        user_id: sessionUser.id,
-        tmdb_id: d.tmdb_id,
-        media_type: d.media_type,
-        scope: "title",
-        season_number: null,
-        episode_number: null,
-        title: d.title,
-        year: d.year,
-        poster_url: d.poster_url || null,
-        backdrop_url: d.backdrop_url || null,
-        ...releasePart,
-        format,
-        rating,
-        comment,
-        genre: d.genre,
-        cast_list: d.cast,
-        overview: d.overview,
-        runtime: d.runtime
-      };
-      const ok = await upsertItem(payload);
-      if (ok) { closeModal(); clearSearchUI(); }
-    });
-
-    if (d.media_type === "tv") {
-      const addSeriesBtn = document.getElementById("addSeriesBtn");
-      const loadSeasonBtn = document.getElementById("loadSeasonBtn");
-      const seasonSelect = document.getElementById("seasonSelect");
-      const seasonPicker = document.getElementById("seasonPicker");
-
-      addSeriesBtn.addEventListener("click", () => document.getElementById("saveTitleBtn").click());
-
-      loadSeasonBtn.addEventListener("click", async () => {
-        const season_number = Number(seasonSelect.value);
-        seasonPicker.classList.remove("hidden");
-        // scroll into view within modal
-        seasonPicker.scrollIntoView({ behavior: "smooth", block: "start" });
-        const status = document.getElementById("episodesStatus");
-        status.textContent = "Loading episodes…";
-
-        let episodes = [];
-        try {
-          episodes = await getSeasonEpisodes(d.tmdb_id, season_number);
-        } catch (e) {
-          console.error(e);
-          status.textContent = "Failed to load episodes.";
-          return;
-        }
-
-        const listHtml = `
-          <div class="mt-3 glass rounded-2xl p-4 border border-white/10">
-            <div class="flex items-center justify-between">
-              <div class="font-semibold">Season ${season_number}</div>
-              <button id="hidePicker" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Hide</button>
-            </div>
-
-            <div class="mt-3 flex flex-col md:flex-row md:items-center gap-2">
-              <button id="addSeasonBtn" class="btn rounded-2xl px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
-                Add entire season ${season_number}
-              </button>
-              <div class="text-xs text-white/60">Or add individual episodes below.</div>
-            </div>
-
-            <div id="epList" class="mt-3 space-y-2" style="max-height: 50vh; overflow-y:auto; -webkit-overflow-scrolling: touch;"></div>
-          </div>
-        `;
-
-        seasonPicker.innerHTML = `<div class="text-sm text-white/70" id="episodesStatus"></div>${listHtml}`;
-        document.getElementById("hidePicker").addEventListener("click", () => seasonPicker.classList.add("hidden"));
-
-        const epList = document.getElementById("epList");
-        epList.innerHTML = episodes.map(ep => {
-          const still = ep.still_path
-            ? `<img src="${esc(imgUrl(ep.still_path))}" class="w-14 h-10 object-cover rounded-xl border border-white/10" />`
-            : `<div class="w-14 h-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">🎞️</div>`;
-          return `
-            <div class="glass rounded-2xl p-3 border border-white/10 flex items-center gap-3">
-              ${still}
-              <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold truncate">E${ep.episode_number} • ${esc(ep.name)}</div>
-                <div class="text-xs text-white/60 truncate">${esc(ep.air_date || "")}</div>
-              </div>
-              <button class="btn chip rounded-2xl px-3 py-1.5 text-sm" data-add-ep="${ep.episode_number}">Add</button>
-            </div>
-          `;
-        }).join("");
-
-        document.getElementById("addSeasonBtn").addEventListener("click", async () => {
-          const { format, rating, comment, releasePart } = buildCommon();
-          const payload = {
-            user_id: sessionUser.id,
-            tmdb_id: d.tmdb_id,
-            media_type: "tv",
-            scope: "season",
-            season_number,
-            episode_number: null,
-            title: d.title,
-            year: d.year,
-            poster_url: d.poster_url || null,
-            backdrop_url: d.backdrop_url || null,
-            ...releasePart,
-            format,
-            rating,
-            comment,
-            genre: d.genre,
-            cast_list: d.cast,
-            overview: d.overview,
-            runtime: d.runtime
-          };
-          await upsertItem(payload);
-        });
-
-        [...epList.querySelectorAll("button[data-add-ep]")].forEach(btn => {
-          btn.addEventListener("click", async () => {
-            const episode_number = Number(btn.dataset.addEp);
-            const ep = episodes.find(e => e.episode_number === episode_number);
-            const { format, rating, comment, releasePart } = buildCommon();
-
-            const payload = {
-              user_id: sessionUser.id,
-              tmdb_id: d.tmdb_id,
-              media_type: "tv",
-              scope: "episode",
-              season_number,
-              episode_number,
-              title: d.title,
-              year: d.year,
-              poster_url: d.poster_url || null,
-              backdrop_url: d.backdrop_url || null,
-              ...releasePart,
-              format,
-              rating,
-              comment,
-              genre: d.genre,
-              cast_list: d.cast,
-              overview: ep?.overview || d.overview,
-              runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime
-            };
-            await upsertItem(payload);
-          });
-        });
-      });
-    }
+    authPanel.classList.add("hidden");
+    appPanel.classList.remove("hidden");
+    profileBtn?.classList.remove("hidden");
+    if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
+    closeProfileMenu();
+    await loadLibrary();
   }
 
-  // ---- Search UI
+
+function waitForSignedIn(timeoutMs = 2000) {
+  return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => {
+      if (!done) resolve(false);
+    }, timeoutMs);
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_IN") {
+        done = true;
+        clearTimeout(timer);
+        sub.subscription.unsubscribe();
+        resolve(true);
+      }
+    });
+  });
+}
+
+signInBtn?.addEventListener("click", async () => {
+    authMsg.textContent = "";
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      authMsg.textContent = error.message;
+      return;
+    }
+    authMsg.textContent = "Signed in!";
+    await refreshSessionUI();
+  });
+
+  signUpBtn?.addEventListener("click", async () => {
+    authMsg.textContent = "";
+    const email = authEmail.value.trim();
+    const password = authPassword.value;
+
+    const { error } = await supabase.auth.signUp({ email, password });
+    if (error) {
+      authMsg.textContent = error.message;
+      return;
+    }
+    authMsg.textContent = "Account created. If you get a confirmation email, confirm it then sign in.";
+    showToast("Account created");
+});
+
+
+// Profile interactions
+profileBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  toggleProfileMenu();
+});
+
+document.addEventListener("click", (e) => {
+  if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) closeProfileMenu();
+});
+
+collectionsBtn?.addEventListener("click", async () => { closeProfileMenu(); await loadCollections(); openCollectionsManager(); });
+
+  profileLogout?.addEventListener("click", async () => {
+  closeProfileMenu();
+  await supabase.auth.signOut();
+  showToast("Logged out");
+  await refreshSessionUI();
+});
+
+supabase.auth.onAuthStateChange(() => {
+  refreshSessionUI();
+});
+
+  // =========================
+  // Search + buttons
+  // =========================
   function setSearchType(t) {
     searchType = t;
-    // visual
-    const active = (el, on) => {
-      if (!el) return;
-      el.classList.toggle("bg-white/10", on);
-      el.classList.toggle("border-white/15", on);
-    };
-    active(typeAll, t==="all");
-    active(typeMovie, t==="movie");
-    active(typeTv, t==="tv");
+    btnActive(typeAll, t === "all");
+    btnActive(typeMovie, t === "movie");
+    btnActive(typeTv, t === "tv");
   }
   typeAll?.addEventListener("click", () => setSearchType("all"));
   typeMovie?.addEventListener("click", () => setSearchType("movie"));
@@ -852,13 +1061,13 @@ if (list) {
   setSearchType("all");
 
   async function doSearch() {
-    const q = (searchInput?.value || "").trim();
+    const q = searchInput.value.trim();
     if (!q) return;
     searchBtn.disabled = true;
     searchBtn.textContent = "Searching…";
     try {
-      const items = await searchTMDB(q);
-      renderSearchResults(items);
+      const results = await searchTMDB(q);
+      renderSearchResults(results);
     } catch (e) {
       console.error(e);
       showToast("Search failed");
@@ -867,168 +1076,221 @@ if (list) {
       searchBtn.textContent = "Search";
     }
   }
-  searchBtn?.addEventListener("click", doSearch);
-  searchInput?.addEventListener("keydown", (e) => {
+  searchBtn.addEventListener("click", doSearch);
+  searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") doSearch();
   });
 
-  function clearSearchUI(){
-  if (searchInput) searchInput.value = "";
-  searchResults?.classList.add("hidden");
-  if (searchResults) searchResults.innerHTML = "";
-}
-
-function renderSearchResults(items) {
- {
-    if (!searchResults) return;
-    if (!items.length) {
-      searchResults.innerHTML = `<div class="p-4 text-sm text-white/70">No results</div>`;
-      searchResults.classList.remove("hidden");
-      return;
-    }
-    searchResults.innerHTML = items.map(it => {
-      const poster = it.poster_path ? imgUrl(it.poster_path) : null;
-      const badge = it.media_type === "tv" ? "TV" : "Movie";
-      return `
-        <button class="w-full text-left p-4 flex items-center gap-4 hover:bg-white/5 transition border-b border-white/10 last:border-b-0"
-          data-id="${it.tmdb_id}" data-type="${it.media_type}">
-          <div class="w-12 h-16 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex-shrink-0">
-            ${poster ? `<img src="${poster}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center text-xl">🎬</div>`}
-          </div>
-          <div class="flex-1 min-w-0">
-            <div class="font-semibold truncate">${esc(it.title)}</div>
-            <div class="text-xs text-white/65 mt-0.5">${esc(it.year)} • <span class="chip px-2 py-0.5 rounded-full">${badge}</span></div>
-            ${it.overview ? `<div class="text-xs text-white/60 mt-1 line-clamp-2">${esc(it.overview)}</div>` : ""}
-          </div>
-          <div class="text-white/60">›</div>
-        </button>
-      `;
-    }).join("");
-    searchResults.classList.remove("hidden");
-    [...searchResults.querySelectorAll("button[data-id]")].forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const tmdb_id = Number(btn.dataset.id);
-        const media_type = btn.dataset.type;
-        await showAddFlow(media_type, tmdb_id);
-      });
-    });
-  }
-
-  // ---- Auth
-  async function refreshSessionUI(retry=0) {
-    if (configLooksBad()) {
-      authPanel?.classList.remove("hidden");
-      appPanel?.classList.add("hidden");
-      authMsg.textContent = "Supabase key looks invalid. Open app.js and paste the FULL SUPABASE_ANON_KEY (no …).";
-      return;
-    }
-
-    let data;
-    try {
-      ({ data } = await supabase.auth.getSession());
-    } catch (e) {
-      console.error(e);
-      if (retry < 3) {
-        return setTimeout(() => refreshSessionUI(retry+1), 250);
-      }
-      showToast("Auth error");
-      return;
-    }
-
-    sessionUser = data.session?.user || null;
-
-    if (!sessionUser) {
-      if (retry < 3) {
-        return setTimeout(() => refreshSessionUI(retry+1), 250);
-      }
-      authPanel?.classList.remove("hidden");
-      appPanel?.classList.add("hidden");
-      profileBtn?.classList.add("hidden");
-      closeProfileMenu();
-      return;
-    }
-
-    authPanel?.classList.add("hidden");
-    appPanel?.classList.remove("hidden");
-    profileBtn?.classList.remove("hidden");
-    if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
-    closeProfileMenu();
-    await loadLibrary();
-  }
-
-  signInBtn?.addEventListener("click", async () => {
-    authMsg.textContent = "";
-    const email = (authEmail.value || "").trim();
-    const password = authPassword.value || "";
-
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      authMsg.textContent = error.message;
-      return;
-    }
-    showToast("Signed in");
-    // let mobile settle
-    setTimeout(() => refreshSessionUI(0), 150);
-  });
-
-  signUpBtn?.addEventListener("click", async () => {
-    authMsg.textContent = "";
-    const email = (authEmail.value || "").trim();
-    const password = authPassword.value || "";
-    const { error } = await supabase.auth.signUp({ email, password });
-    if (error) {
-      authMsg.textContent = error.message;
-      return;
-    }
-    authMsg.textContent = "Account created. If you get a confirmation email, confirm it then sign in.";
-    showToast("Account created");
-  });
-
-  profileBtn?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleProfileMenu();
-  });
   document.addEventListener("click", (e) => {
-    if (!e.target.closest("#profileMenu") && !e.target.closest("#profileBtn")) closeProfileMenu();
-  });
-  profileLogout?.addEventListener("click", async () => {
-    closeProfileMenu();
-    await supabase.auth.signOut();
-    showToast("Logged out");
-    refreshSessionUI(0);
+    if (!e.target.closest("#searchResults") && !e.target.closest("#searchInput") && !e.target.closest("#searchBtn")) {
+      searchResults.classList.add("hidden");
+    }
   });
 
-  supabase.auth.onAuthStateChange(() => {
-    refreshSessionUI(0);
-  });
-
-  // ---- Library control listeners
-  [filterScope, filterMediaType, filterFormat, sortBy, minRating].filter(Boolean)
-    .forEach(el => el.addEventListener("change", renderLibrary));
-  librarySearch?.addEventListener("input", () => renderLibrary());
-
-  // ---- PWA SW
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
-    });
-  }
-
+  // =========================
   // Boot
-  refreshSessionUI(0);
-})();function applyViewMode(){
-  localStorage.setItem("nv_view", viewMode);
-  btnActive(viewGridBtn, viewMode === "grid");
-  btnActive(viewListBtn, viewMode === "list");
+  // =========================
+// Library filter + sort controls (attach listeners)
+// =========================
+function wireLibraryControls() {
+  const controls = [filterScope, filterMediaType, filterFormat, filterCollection, sortBy, minRating].filter(Boolean);
+  controls.forEach((el) => el.addEventListener("change", () => {
+    try { renderLibrary(); } catch (e) { console.error(e); }
+  }));
+  librarySearch?.addEventListener("input", () => {
+    try { window.requestAnimationFrame(renderLibrary); } catch (e) { console.error(e); }
+  });
 }
-viewGridBtn?.addEventListener("click", () => { viewMode = "grid"; applyViewMode(); renderLibrary(); });
-viewListBtn?.addEventListener("click", () => { viewMode = "list"; applyViewMode(); renderLibrary(); });
-applyViewMode();
 
-// Force filters open on desktop
-const filtersDetails = document.getElementById("filtersDetails");
-const syncFiltersOpen = () => { if (!filtersDetails) return; if (window.matchMedia("(min-width: 768px)").matches) filtersDetails.open = true; };
-window.addEventListener("resize", syncFiltersOpen);
-syncFiltersOpen();
+wireLibraryControls();
+
+// =========================
+  refreshSessionUI();
+})();// =========================
+// Collections (DB + UI)
+// =========================
+async function loadCollections() {
+  if (!sessionUser) return;
+  const { data, error } = await supabase
+    .from("collections")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    // If table doesn't exist yet, just hide collections features gracefully
+    console.warn("Collections not available:", error.message);
+    collections = [];
+    renderCollectionFilter();
+    return;
+  }
+  collections = data || [];
+  renderCollectionFilter();
+}
+
+function renderCollectionFilter() {
+  if (!filterCollection) return;
+  const current = activeCollectionId || "all";
+  filterCollection.innerHTML = [
+    `<option value="all">All collections</option>`,
+    ...collections.map(c => `<option value="${c.id}">${esc(c.name)}</option>`)
+  ].join("");
+  filterCollection.value = current;
+}
+
+async function createCollection(name) {
+  const clean = (name || "").trim();
+  if (!clean) return;
+  const { error } = await supabase
+    .from("collections")
+    .insert({ user_id: sessionUser.id, name: clean });
+
+  if (error) {
+    console.error(error);
+    showToast("Create collection failed");
+    return;
+  }
+  await loadCollections();
+  showToast("Collection created");
+}
+
+async function renameCollection(id, name) {
+  const clean = (name || "").trim();
+  if (!clean) return;
+  const { error } = await supabase
+    .from("collections")
+    .update({ name: clean })
+    .eq("id", id);
+
+  if (error) {
+    console.error(error);
+    showToast("Rename failed");
+    return;
+  }
+  await loadCollections();
+  showToast("Renamed");
+}
+
+async function deleteCollection(id) {
+  const { error } = await supabase.from("collections").delete().eq("id", id);
+  if (error) {
+    console.error(error);
+    showToast("Delete failed");
+    return;
+  }
+  if (activeCollectionId === id) {
+    activeCollectionId = "all";
+    localStorage.setItem("activeCollectionId", activeCollectionId);
+  }
+  await loadCollections();
+  await loadLibrary();
+  showToast("Deleted");
+}
+
+async function setActiveCollection(id) {
+  activeCollectionId = id || "all";
+  localStorage.setItem("activeCollectionId", activeCollectionId);
+  renderCollectionFilter();
+  await loadLibrary();
+}
+
+async function getItemCollectionIds(itemId) {
+  const { data, error } = await supabase
+    .from("collection_items")
+    .select("collection_id")
+    .eq("item_id", itemId);
+
+  if (error) return [];
+  return (data || []).map(r => r.collection_id);
+}
+
+async function addItemToCollection(itemId, collectionId) {
+  const { error } = await supabase
+    .from("collection_items")
+    .insert({ collection_id: collectionId, item_id: itemId });
+
+  if (error) {
+    console.error(error);
+    showToast("Add to collection failed");
+    return;
+  }
+}
+
+async function removeItemFromCollection(itemId, collectionId) {
+  const { error } = await supabase
+    .from("collection_items")
+    .delete()
+    .eq("collection_id", collectionId)
+    .eq("item_id", itemId);
+
+  if (error) {
+    console.error(error);
+    showToast("Remove failed");
+    return;
+  }
+}
+
+function openCollectionsManager() {
+  const list = collections.map(c => `
+    <div class="glass rounded-2xl p-3 border border-white/10 flex items-center gap-2">
+      <button class="btn chip rounded-xl px-3 py-2 text-sm" data-use="${c.id}">View</button>
+      <div class="flex-1 min-w-0">
+        <div class="font-semibold truncate">${esc(c.name)}</div>
+        <div class="text-xs text-white/60 truncate">${c.id}</div>
+      </div>
+      <button class="btn chip rounded-xl px-3 py-2 text-sm" data-rename="${c.id}">Rename</button>
+      <button class="btn chip rounded-xl px-3 py-2 text-sm" data-del="${c.id}">Delete</button>
+    </div>
+  `).join("");
+
+  openModal(`
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="text-xl font-semibold">Collections</div>
+        <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+      </div>
+
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="text-sm text-white/70 mb-2">Create a new collection</div>
+        <div class="flex gap-2">
+          <input id="newColName" class="flex-1 rounded-2xl px-3 py-2 input" placeholder="e.g. Marvel, Favorites, Anime…" />
+          <button id="createColBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">Create</button>
+        </div>
+      </div>
+
+      <div class="space-y-2">
+        ${list || `<div class="text-sm text-white/65">No collections yet.</div>`}
+      </div>
+    </div>
+  `);
+
+  document.getElementById("mClose").addEventListener("click", closeModal);
+  document.getElementById("createColBtn").addEventListener("click", async () => {
+    const name = document.getElementById("newColName").value;
+    await createCollection(name);
+    closeModal();
+    openCollectionsManager();
+  });
+
+  [...modalBody.querySelectorAll("[data-use]")].forEach(b => b.addEventListener("click", async () => {
+    await setActiveCollection(b.dataset.use);
+    closeModal();
+  }));
+  [...modalBody.querySelectorAll("[data-rename]")].forEach(b => b.addEventListener("click", async () => {
+    const id = b.dataset.rename;
+    const current = collections.find(c => c.id === id)?.name || "";
+    const next = prompt("Rename collection:", current);
+    if (next !== null) await renameCollection(id, next);
+    closeModal();
+    openCollectionsManager();
+  }));
+  [...modalBody.querySelectorAll("[data-del]")].forEach(b => b.addEventListener("click", async () => {
+    const id = b.dataset.del;
+    if (confirm("Delete this collection?")) {
+      await deleteCollection(id);
+      closeModal();
+      openCollectionsManager();
+    }
+  }));
+}
 
 
