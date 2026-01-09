@@ -47,6 +47,8 @@
   const sortBy = document.getElementById("sortBy");
   const minRating = document.getElementById("minRating");
   const statsText = document.getElementById("statsText");
+  const viewGrid = document.getElementById("viewGrid");
+  const viewList = document.getElementById("viewList");
 
   const grid = document.getElementById("grid");
   const emptyState = document.getElementById("emptyState");
@@ -256,6 +258,7 @@ async function openCollectionsManager() {
   let sessionUser = null;
   let library = [];
   let searchType = "all";
+  let viewMode = localStorage.getItem('nv_viewMode') || 'grid';
 
   // ---- TMDB
   async function tmdbFetch(url) {
@@ -428,7 +431,13 @@ async function openCollectionsManager() {
     return scopeOk && typeOk && formatOk && ratingOk && searchOk;
   }
 
-  function sortLibraryRows(rows) {
+  function toTime(v){
+  if (!v) return 0;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function sortLibraryRows(rows) {
     const mode = (sortBy?.value || "added_desc");
     const parseYear = (y) => {
       const n = parseInt((y||"").toString().slice(0,4), 10);
@@ -448,7 +457,7 @@ async function openCollectionsManager() {
     const out = [...rows];
     out.sort((a,b) => {
       switch(mode) {
-        case "added_asc": return (new Date(a.created_at).getTime()||0) - (new Date(b.created_at).getTime()||0);
+        case "added_asc": return toTime(a.created_at) - toTime(b.created_at);
         case "release_desc": return dateNum(b) - dateNum(a);
         case "release_asc": return dateNum(a) - dateNum(b);
         case "rating_desc": return ratingNum(b) - ratingNum(a);
@@ -461,7 +470,14 @@ async function openCollectionsManager() {
     return out;
   }
 
-  function renderLibrary() {
+  
+function applyViewMode(){
+  // update chips
+  btnActive(viewGrid, viewMode === 'grid');
+  btnActive(viewList, viewMode === 'list');
+}
+
+function renderLibrary() {
     const filtered = sortLibraryRows((library||[]).filter(libraryFiltersMatch));
     if (statsText) statsText.textContent = `${filtered.length} item${filtered.length===1?"":"s"} (of ${library.length})`;
 
@@ -559,8 +575,9 @@ async function openCollectionsManager() {
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating (0-10)</label>
-                <input id="eRating" type="number" min="0" max="10" step="0.5" value="${row.rating ?? ""}" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+                <label class="text-xs text-white/70">Rating</label>
+                <input id="eRating" type="range" min="0" max="10" step="0.5" value=${row.rating ?? ""}" class="mt-1 w-full input" />
+                <div id="eRatingStars" class="mt-1 text-sm text-white/80"></div>
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry</label>
@@ -573,8 +590,16 @@ async function openCollectionsManager() {
               <textarea id="eComment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="Add your notes…">${esc(row.comment || "")}</textarea>
             </div>
 
-            <div class="flex flex-col md:flex-row gap-2">
-              <button id="saveBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+            <div class="glass rounded-2xl p-4 border border-white/10">
+  <div class="flex items-center justify-between">
+    <div class="text-sm text-white/70">Collections</div>
+    <button id="manageColsBtn" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Manage</button>
+  </div>
+  <div id="colAssign" class="mt-3 text-sm text-white/70">Loading…</div>
+</div>
+
+<div class="flex flex-col md:flex-row gap-2">
+  <button id="saveBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
                 Save changes
               </button>
               <button id="delBtn" class="btn rounded-2xl px-4 py-2 bg-red-500/15 hover:bg-red-500/20 border border-red-400/20">
@@ -590,7 +615,57 @@ async function openCollectionsManager() {
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
-    document.getElementById("saveBtn").addEventListener("click", async () => {
+async function loadCollectionsForItem(mediaItemId){
+  const colAssign = document.getElementById("colAssign");
+  const manageBtn = document.getElementById("manageColsBtn");
+  manageBtn?.addEventListener("click", () => openCollectionsManager());
+
+  try{
+    const { data: cols, error: e1 } = await supabase.from("collections").select("id,name").order("created_at",{ascending:false});
+    if (e1) throw e1;
+    const { data: links, error: e2 } = await supabase.from("collection_items").select("collection_id").eq("media_item_id", mediaItemId);
+    if (e2) throw e2;
+    const set = new Set((links||[]).map(x=>x.collection_id));
+    if (!cols || cols.length===0){
+      colAssign.innerHTML = '<div class="text-white/60 text-sm">No collections yet. Click “Manage” to create one.</div>';
+      return;
+    }
+    colAssign.innerHTML = cols.map(c => `
+      <label class="flex items-center gap-2 py-1">
+        <input type="checkbox" data-colid="${c.id}" ${set.has(c.id) ? "checked" : ""} />
+        <span>${esc(c.name)}</span>
+      </label>
+    `).join("");
+
+    [...colAssign.querySelectorAll("input[type=checkbox][data-colid]")].forEach(cb => {
+      cb.addEventListener("change", async () => {
+        const colId = cb.getAttribute("data-colid");
+        if (cb.checked){
+          const { error } = await supabase.from("collection_items").insert({ user_id: sessionUser.id, collection_id: colId, media_item_id: mediaItemId });
+          if (error){ console.error(error); showToast("Add to collection failed"); cb.checked=false; }
+        } else {
+          const { error } = await supabase.from("collection_items").delete().eq("collection_id", colId).eq("media_item_id", mediaItemId);
+          if (error){ console.error(error); showToast("Remove failed"); cb.checked=true; }
+        }
+      });
+    });
+  } catch (e){
+    console.warn("Collections not available:", e);
+    colAssign.innerHTML = '<div class="text-white/60 text-sm">Collections not set up yet.</div>';
+  }
+}
+
+loadCollectionsForItem(row.id);
+
+    const eRatingEl = document.getElementById("eRating");
+const eRatingStarsEl = document.getElementById("eRatingStars");
+if (eRatingEl && eRatingStarsEl) {
+  const upd = () => eRatingStarsEl.textContent = starsFromRating(eRatingEl.value);
+  upd();
+  eRatingEl.addEventListener("input", upd);
+}
+
+document.getElementById("saveBtn").addEventListener("click", async () => {
       const format = document.getElementById("eFormat").value;
       const ratingRaw = document.getElementById("eRating").value;
       const rating = ratingRaw === "" ? null : Number(ratingRaw);
@@ -703,8 +778,9 @@ async function openCollectionsManager() {
                 </select>
               </div>
               <div>
-                <label class="text-xs text-white/70">Rating (0-10)</label>
-                <input id="rating" type="number" min="0" max="10" step="0.5" value="" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+                <label class="text-xs text-white/70">Rating</label>
+                <input id="rating" type="range" min="0" max="10" step="0.5" value="0" class="mt-1 w-full input" />
+                <div id="ratingStars" class="mt-1 text-sm text-white/80"></div>
               </div>
               <div>
                 <label class="text-xs text-white/70">Entry</label>
@@ -733,6 +809,48 @@ async function openCollectionsManager() {
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
+async function loadCollectionsForItem(mediaItemId){
+  const colAssign = document.getElementById("colAssign");
+  const manageBtn = document.getElementById("manageColsBtn");
+  manageBtn?.addEventListener("click", () => openCollectionsManager());
+
+  try{
+    const { data: cols, error: e1 } = await supabase.from("collections").select("id,name").order("created_at",{ascending:false});
+    if (e1) throw e1;
+    const { data: links, error: e2 } = await supabase.from("collection_items").select("collection_id").eq("media_item_id", mediaItemId);
+    if (e2) throw e2;
+    const set = new Set((links||[]).map(x=>x.collection_id));
+    if (!cols || cols.length===0){
+      colAssign.innerHTML = '<div class="text-white/60 text-sm">No collections yet. Click “Manage” to create one.</div>';
+      return;
+    }
+    colAssign.innerHTML = cols.map(c => `
+      <label class="flex items-center gap-2 py-1">
+        <input type="checkbox" data-colid="${c.id}" ${set.has(c.id) ? "checked" : ""} />
+        <span>${esc(c.name)}</span>
+      </label>
+    `).join("");
+
+    [...colAssign.querySelectorAll("input[type=checkbox][data-colid]")].forEach(cb => {
+      cb.addEventListener("change", async () => {
+        const colId = cb.getAttribute("data-colid");
+        if (cb.checked){
+          const { error } = await supabase.from("collection_items").insert({ user_id: sessionUser.id, collection_id: colId, media_item_id: mediaItemId });
+          if (error){ console.error(error); showToast("Add to collection failed"); cb.checked=false; }
+        } else {
+          const { error } = await supabase.from("collection_items").delete().eq("collection_id", colId).eq("media_item_id", mediaItemId);
+          if (error){ console.error(error); showToast("Remove failed"); cb.checked=true; }
+        }
+      });
+    });
+  } catch (e){
+    console.warn("Collections not available:", e);
+    colAssign.innerHTML = '<div class="text-white/60 text-sm">Collections not set up yet.</div>';
+  }
+}
+
+loadCollectionsForItem(row.id);
+
     const buildCommon = () => {
       const format = document.getElementById("format").value;
       const ratingRaw = document.getElementById("rating").value;
@@ -742,7 +860,15 @@ async function openCollectionsManager() {
       return { format, rating, comment, releasePart };
     };
 
-    document.getElementById("saveTitleBtn").addEventListener("click", async () => {
+    const ratingEl = document.getElementById("rating");
+const ratingStarsEl = document.getElementById("ratingStars");
+if (ratingEl && ratingStarsEl) {
+  const upd = () => ratingStarsEl.textContent = starsFromRating(ratingEl.value);
+  upd();
+  ratingEl.addEventListener("input", upd);
+}
+
+document.getElementById("saveTitleBtn").addEventListener("click", async () => {
       const { format, rating, comment, releasePart } = buildCommon();
       const payload = {
         user_id: sessionUser.id,
@@ -765,7 +891,7 @@ async function openCollectionsManager() {
         runtime: d.runtime
       };
       const ok = await upsertItem(payload);
-      if (ok) closeModal();
+      if (ok) { closeModal(); if (searchInput) searchInput.value=''; searchResults?.classList.add('hidden'); }
     });
 
     if (d.media_type === "tv") {
@@ -906,6 +1032,10 @@ async function openCollectionsManager() {
   typeMovie?.addEventListener("click", () => setSearchType("movie"));
   typeTv?.addEventListener("click", () => setSearchType("tv"));
   setSearchType("all");
+
+  viewGrid?.addEventListener('click', () => { viewMode='grid'; localStorage.setItem('nv_viewMode', viewMode); applyViewMode(); renderLibrary(); });
+  viewList?.addEventListener('click', () => { viewMode='list'; localStorage.setItem('nv_viewMode', viewMode); applyViewMode(); renderLibrary(); });
+  applyViewMode();
 
   async function doSearch() {
     const q = (searchInput?.value || "").trim();
@@ -1071,4 +1201,13 @@ profileLogout?.addEventListener("click", async () => {
 
   // Boot
   refreshSessionUI(0);
-})();
+})();function wireLibraryFilters(){
+  const els = [filterScope, filterMediaType, filterFormat, sortBy, minRating].filter(Boolean);
+  els.forEach(el => el.addEventListener('change', () => renderLibrary()));
+  librarySearch?.addEventListener('input', () => renderLibrary());
+
+  const fd = document.getElementById('filtersDetails');
+  if (fd && window.matchMedia('(min-width: 768px)').matches) fd.setAttribute('open','open');
+}
+wireLibraryFilters();
+  

@@ -48,7 +48,7 @@
       box-shadow: 0 20px 60px rgba(0,0,0,0.35);
     }
     .glass-strong{
-      background: var(--glass2);
+      background: rgba(10,12,18,0.95);
       border: 1px solid var(--stroke2);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
@@ -133,7 +133,22 @@
   #profileMenu{
     background: rgba(10,12,18,0.95) !important;
   }
+
+  /* Filters collapsible */
+  @media (min-width: 768px){
+    #filtersDetails{ display:block; }
+    #filtersDetails > summary{ display:none; }
+    #filtersDetails[open] > div{ display:flex; }
+  }
+  @media (max-width: 767px){
+    #filtersDetails > div{ display:block; }
+  }
+
+  /* Modal + episode picker scrolling */
+  #modalBody{ max-height: calc(100dvh - 6rem); overflow-y:auto; -webkit-overflow-scrolling: touch; }
+  #seasonPicker{ max-height: 55vh; overflow-y:auto; -webkit-overflow-scrolling: touch; }
 </style>
+
 
 
 
@@ -185,7 +200,7 @@
         <div>
           <h1 class="text-2xl md:text-3xl font-semibold">Sign in to your catalog</h1>
           <p class="text-white/70 mt-2">
-            Search TMDB, add movies or shows, rate /10, pick format, leave notes — saved to your account.
+            Search, add movies or shows, rate /10, pick format, leave notes — saved to your account.
           </p>
         </div>
         <div class="chip rounded-2xl px-4 py-2 text-sm text-white/70">
@@ -227,8 +242,8 @@
       <div class="glass-strong rounded-3xl p-5 md:p-6">
         <div class="flex flex-col md:flex-row md:items-center gap-3">
           <div class="flex-1">
-            <h2 class="text-xl font-semibold">Search TMDB</h2>
-            <p class="text-white/70 text-sm mt-1">Add movies, full TV series, seasons, or single episodes.</p>
+            <h2 class="text-xl font-semibold">Search</h2>
+            
           </div>
 
           <div class="flex gap-2">
@@ -254,51 +269,58 @@
 
       <!-- Library filters -->
       <div class="flex flex-col md:flex-row md:items-center gap-3">
-        <div class="glass rounded-2xl p-3 flex flex-col md:flex-row gap-2 w-full md:w-auto">
-          <select id="filterScope" class="rounded-xl px-3 py-2 input">
-            <option value="all">All entries</option>
-            <option value="title">Titles</option>
-            <option value="season">Seasons</option>
-            <option value="episode">Episodes</option>
-          </select>
-          <select id="filterMediaType" class="rounded-xl px-3 py-2 input">
-            <option value="all">Movies + TV</option>
-            <option value="movie">Movies</option>
-            <option value="tv">TV</option>
-          </select>
-          <select id="filterFormat" class="rounded-xl px-3 py-2 input">
-            <option value="all">All formats</option>
-            <option value="Blu-ray">Blu-ray</option>
-            <option value="DVD">DVD</option>
-            <option value="Digital">Digital</option>
-            <option value="4K Ultra HD">4K Ultra HD</option>
-            <option value="VHS">VHS</option>
-          </select>
-          <input id="librarySearch" placeholder="Search your library…" class="rounded-xl px-3 py-2 input w-full md:w-56" />
-          <select id="sortBy" class="rounded-xl px-3 py-2 input">
-            <option value="added_desc">Added: newest</option>
-            <option value="added_asc">Added: oldest</option>
-            <option value="release_desc">Release: newest</option>
-            <option value="release_asc">Release: oldest</option>
-            <option value="rating_desc">Rating: high → low</option>
-            <option value="rating_asc">Rating: low → high</option>
-            <option value="title_asc">Title: A → Z</option>
-            <option value="title_desc">Title: Z → A</option>
-          </select>
-          <select id="minRating" class="rounded-xl px-3 py-2 input">
-            <option value="0">Any rating</option>
-            <option value="10">10+</option>
-            <option value="9">9+</option>
-            <option value="8">8+</option>
-            <option value="7">7+</option>
-            <option value="6">6+</option>
-            <option value="5">5+</option>
-            <option value="4">4+</option>
-            <option value="3">3+</option>
-            <option value="2">2+</option>
-            <option value="1">1+</option>
-          </select>
-        </div>
+        <details id="filtersDetails" class="glass rounded-2xl p-3 w-full">
+  <summary class="cursor-pointer select-none flex items-center justify-between">
+    <span class="font-semibold">Filters</span>
+    <span class="text-white/60 text-sm">Tap to expand</span>
+  </summary>
+  <div class="mt-3 flex flex-col md:flex-row gap-2">
+    <select id="filterScope" class="rounded-xl px-3 py-2 input">
+    <option value="all">All entries</option>
+    <option value="title">Titles</option>
+    <option value="season">Seasons</option>
+    <option value="episode">Episodes</option>
+  </select>
+  <select id="filterMediaType" class="rounded-xl px-3 py-2 input">
+    <option value="all">Movies + TV</option>
+    <option value="movie">Movies</option>
+    <option value="tv">TV</option>
+  </select>
+  <select id="filterFormat" class="rounded-xl px-3 py-2 input">
+    <option value="all">All formats</option>
+    <option value="Blu-ray">Blu-ray</option>
+    <option value="DVD">DVD</option>
+    <option value="Digital">Digital</option>
+    <option value="4K Ultra HD">4K Ultra HD</option>
+    <option value="VHS">VHS</option>
+  </select>
+  <input id="librarySearch" placeholder="Search your library…" class="rounded-xl px-3 py-2 input w-full md:w-56" />
+  <select id="sortBy" class="rounded-xl px-3 py-2 input">
+    <option value="added_desc">Added: newest</option>
+    <option value="added_asc">Added: oldest</option>
+    <option value="release_desc">Release: newest</option>
+    <option value="release_asc">Release: oldest</option>
+    <option value="rating_desc">Rating: high → low</option>
+    <option value="rating_asc">Rating: low → high</option>
+    <option value="title_asc">Title: A → Z</option>
+    <option value="title_desc">Title: Z → A</option>
+  </select>
+  <select id="minRating" class="rounded-xl px-3 py-2 input">
+    <option value="0">Any rating</option>
+    <option value="10">10+</option>
+    <option value="9">9+</option>
+    <option value="8">8+</option>
+    <option value="7">7+</option>
+    <option value="6">6+</option>
+    <option value="5">5+</option>
+    <option value="4">4+</option>
+    <option value="3">3+</option>
+    <option value="2">2+</option>
+    <option value="1">1+</option>
+  </select>
+
+  </div>
+</details>
 
         <div class="ml-auto glass rounded-2xl px-4 py-3 text-sm text-white/80">
           <span id="statsText">0 items</span>

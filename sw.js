@@ -1,4 +1,4 @@
-const CACHE_NAME = "nexavault-cache-v31";
+const CACHE_NAME = "nexavault-cache-v40";
 const ASSETS = [
     "./",
     "./index.html",
