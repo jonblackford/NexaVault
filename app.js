@@ -640,7 +640,7 @@
 
             <div class="glass rounded-2xl p-4 border border-white/10">
               <div class="text-sm text-white/70">Cast</div>
-              <div class="text-sm mt-1">${esc(row.cast_list || "—")}</div>
+              <div class="text-sm mt-1">${esc(row.cast || "—")}</div>
             </div>
 
             <div class="grid md:grid-cols-3 gap-3">
@@ -703,7 +703,7 @@
   // =========================
   // Auth
   // =========================
-  async async function refreshSessionUI() {
+  async function refreshSessionUI() {
     const { data } = await supabase.auth.getSession();
     sessionUser = data.session?.user || null;
 
@@ -809,7 +809,7 @@
   // Boot
   // =========================
   refreshSessionUI();
-})();
+// (IIFE intentionally remains open so Collections helpers can access same scope)
 // =========================
 // Collections
 // =========================
@@ -939,4 +939,6 @@ async function openCollectionsModal() {
     openCollectionsModal();
   });
 }
+
+})();
 
