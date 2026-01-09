@@ -397,6 +397,7 @@ function renderLibrary() {
           </div>
           <div class="p-3">
             <div class="font-semibold text-sm truncate">${esc(row.title)}</div>
+            ${row.scope !== "title" ? `<div class="text-xs text-white/70 mt-0.5 truncate">${esc(row.scope === "season" ? `Season ${row.season_number}` : `S${row.season_number}E${row.episode_number}`)}</div>` : ""}
             <div class="text-xs text-white/65 mt-1 flex items-center justify-between gap-2">
               <span class="truncate">${esc(row.year || "")}</span>
               <span class="chip px-2 py-0.5 rounded-full">${esc(row.format || "Digital")}</span>
