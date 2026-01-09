@@ -245,14 +245,40 @@ async function openCollectionsManager() {
     return false;
   }
 
-  // ---- Supabase client
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true
+  // ---- Supabase client (defensive init + logging)
+  let supabase = null;
+  try {
+    const sbGlobal = window.supabase || globalThis.supabase;
+    if (!sbGlobal || !sbGlobal.createClient) {
+      console.error("Supabase SDK not found on window or globalThis:", sbGlobal);
+    } else {
+      supabase = sbGlobal.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true
+        }
+      });
+      console.log("Supabase client initialized", supabase ? true : false);
     }
-  });
+  } catch (e) {
+    console.error("Error initializing Supabase client:", e);
+  }
+
+  // Ensure `supabase` variable exists to avoid runtime errors later.
+  if (!supabase) {
+    // Create a minimal stub to avoid crashes; real auth will fail until SDK loads.
+    supabase = {
+      auth: {
+        async getSession() { return { data: { session: null } }; },
+        async signInWithPassword() { return { error: new Error('Supabase SDK not loaded') }; },
+        async signUp() { return { error: new Error('Supabase SDK not loaded') }; },
+        async signOut() { return; },
+        onAuthStateChange() { return { data: null }; }
+      },
+      from() { return { select: async () => ({ data: null, error: new Error('Supabase SDK not loaded') }) }; }
+    };
+  }
 
   // ---- State
   let sessionUser = null;
