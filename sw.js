@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 const CACHE_NAME = "nexavault-cache-v20";
+=======
+const CACHE_NAME = "nexavault-cache-v3";
+>>>>>>> parent of c48667f (episode bug fix)
 const ASSETS = [
     "./",
     "./index.html",

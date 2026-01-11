@@ -383,7 +383,296 @@
     });
   }
 
+<<<<<<< HEAD
   // ---- Modals: view/edit item
+=======
+  // =========================
+  // Add / Edit flows
+  // =========================
+  async function showAddFlow(media_type, tmdb_id) {
+    openModal(`
+      <div class="space-y-4">
+        <div class="flex items-center justify-between">
+          <div class="text-lg font-semibold">Loading details…</div>
+          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+        </div>
+        <div class="grid md:grid-cols-[160px,1fr] gap-4">
+          <div class="rounded-2xl overflow-hidden border border-white/10 skeleton aspect-[2/3]"></div>
+          <div class="space-y-3">
+            <div class="h-6 w-2/3 rounded-xl skeleton"></div>
+            <div class="h-4 w-1/2 rounded-xl skeleton"></div>
+            <div class="h-4 w-full rounded-xl skeleton"></div>
+            <div class="h-4 w-full rounded-xl skeleton"></div>
+          </div>
+        </div>
+      </div>
+    `);
+    document.getElementById("mClose").addEventListener("click", closeModal);
+
+    const d = await getDetails(media_type, tmdb_id);
+
+    // default form fields
+    const defaultFormat = "Digital";
+    const defaultRating = "";
+    const defaultComment = "";
+
+    const titleBadge = d.media_type === "tv" ? "TV" : "Movie";
+    const poster = d.poster_url ? `<img src="${esc(d.poster_url)}" class="w-full h-full object-cover" />` :
+      `<div class="w-full h-full flex items-center justify-center text-4xl">🎬</div>`;
+
+    const tvControls = d.media_type === "tv" ? `
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="flex items-center justify-between">
+          <div class="font-semibold">TV Options</div>
+          <div class="text-xs text-white/60">${d.seasons_count} seasons</div>
+        </div>
+
+        <div class="mt-3 flex flex-col md:flex-row gap-2">
+          <button id="addSeriesBtn" class="btn rounded-2xl px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
+            Add entire series
+          </button>
+
+          <select id="seasonSelect" class="rounded-2xl px-3 py-2 input flex-1">
+            ${d.seasons.map(s => `<option value="${s.season_number}">Season ${s.season_number}${s.name ? ` • ${esc(s.name)}` : ""}</option>`).join("")}
+          </select>
+
+          <button id="loadSeasonBtn" class="btn chip rounded-2xl px-4 py-2">Pick episodes</button>
+        </div>
+
+        <div id="seasonPicker" class="hidden mt-4"></div>
+      </div>
+    ` : "";
+
+    openModal(`
+      <div class="space-y-5">
+        <div class="flex items-start justify-between gap-3">
+          <div>
+            <div class="text-xs uppercase tracking-[0.25em] text-white/60">${titleBadge}</div>
+            <div class="text-2xl font-semibold">${esc(d.title)} <span class="text-white/60 font-normal">(${esc(d.year)})</span></div>
+            <div class="text-sm text-white/70 mt-1">${esc(d.runtime)} • ${esc(d.genre)}</div>
+          </div>
+          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+        </div>
+
+        <div class="grid md:grid-cols-[170px,1fr] gap-5">
+          <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">
+            ${poster}
+          </div>
+
+          <div class="space-y-4">
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm text-white/70">Cast</div>
+              <div class="text-sm mt-1">${esc(d.cast)}</div>
+            </div>
+
+            <div class="glass rounded-2xl p-4 border border-white/10">
+              <div class="text-sm text-white/70">Overview</div>
+              <div class="text-sm mt-1 leading-relaxed text-white/85">${esc(d.overview)}</div>
+            </div>
+
+            <div class="grid md:grid-cols-3 gap-3">
+              <div>
+                <label class="text-xs text-white/70">Format</label>
+                <select id="format" class="mt-1 w-full rounded-2xl px-3 py-2 input">
+                  ${["Blu-ray","DVD","Digital","4K Ultra HD","VHS"].map(v => `<option value="${v}" ${v===defaultFormat?"selected":""}>${v}</option>`).join("")}
+                </select>
+              </div>
+              <div>
+                <label class="text-xs text-white/70">Rating (0-10)</label>
+                <input id="rating" type="number" min="0" max="10" step="0.5" value="${defaultRating}"
+                  class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+              </div>
+              <div>
+                <label class="text-xs text-white/70">Scope</label>
+                <select id="scope" class="mt-1 w-full rounded-2xl px-3 py-2 input">
+                  <option value="title" selected>${d.media_type === "tv" ? "Series" : "Movie"}</option>
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="text-xs text-white/70">Comment</label>
+              <textarea id="comment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="What did you think?">${esc(defaultComment)}</textarea>
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-2">
+              <button id="saveTitleBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+                Save to library
+              </button>
+              <button id="cancelBtn" class="btn chip rounded-2xl px-4 py-2">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        ${tvControls}
+      </div>
+    `);
+
+    document.getElementById("mClose").addEventListener("click", closeModal);
+    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+
+    // Save title/movie/series row
+    document.getElementById("saveTitleBtn").addEventListener("click", async () => {
+      const format = document.getElementById("format").value;
+      const ratingRaw = document.getElementById("rating").value;
+      const rating = ratingRaw === "" ? null : Number(ratingRaw);
+      const comment = document.getElementById("comment").value;
+
+      const payload = {
+        user_id: sessionUser.id,
+        tmdb_id: d.tmdb_id,
+        media_type: d.media_type,
+        scope: "title",
+        title: d.title,
+        year: d.year,
+        poster_url: d.poster_url || null,
+        backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
+        rating,
+        comment,
+        genre: d.genre,
+        cast: d.cast,
+        overview: d.overview,
+        runtime: d.runtime,
+        season_number: null,
+        episode_number: null,
+      };
+
+      const ok = await upsertItem(payload);
+      if (ok) closeModal();
+    });
+
+    // TV: add series button + pick episodes
+    if (d.media_type === "tv") {
+      const addSeriesBtn = document.getElementById("addSeriesBtn");
+      const loadSeasonBtn = document.getElementById("loadSeasonBtn");
+      const seasonSelect = document.getElementById("seasonSelect");
+      const seasonPicker = document.getElementById("seasonPicker");
+
+      addSeriesBtn.addEventListener("click", async () => {
+        // same as saveTitleBtn but explicit series naming
+        document.getElementById("scope").value = "title";
+        document.getElementById("saveTitleBtn").click();
+      });
+
+      loadSeasonBtn.addEventListener("click", async () => {
+        const season_number = Number(seasonSelect.value);
+        seasonPicker.classList.remove("hidden");
+        seasonPicker.innerHTML = `
+          <div class="glass rounded-2xl p-4 border border-white/10">
+            <div class="flex items-center justify-between">
+              <div class="font-semibold">Season ${season_number}</div>
+              <button id="closeSeasonPicker" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Hide</button>
+            </div>
+            <div class="mt-3 text-sm text-white/70">Loading episodes…</div>
+            <div class="mt-4 space-y-2" id="epList"></div>
+          </div>
+        `;
+        document.getElementById("closeSeasonPicker").addEventListener("click", () => {
+          seasonPicker.classList.add("hidden");
+        });
+
+        const episodes = await getSeasonEpisodes(d.tmdb_id, season_number);
+        const epList = document.getElementById("epList");
+
+        if (!episodes.length) {
+          epList.innerHTML = `<div class="text-sm text-white/60">No episodes found.</div>`;
+          return;
+        }
+
+        // Add season button
+        epList.innerHTML = `
+          <div class="flex flex-col md:flex-row md:items-center gap-2 mb-3">
+            <button id="addSeasonBtn" class="btn rounded-2xl px-4 py-2 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
+              Add entire season ${season_number}
+            </button>
+            <div class="text-xs text-white/60">Adds a season entry; you can also add individual episodes below.</div>
+          </div>
+        ` + episodes.map(ep => {
+          const still = ep.still_path ? `<img src="${esc(imgUrl(ep.still_path))}" class="w-14 h-10 object-cover rounded-xl border border-white/10" />`
+            : `<div class="w-14 h-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">🎞️</div>`;
+          return `
+            <div class="glass rounded-2xl p-3 border border-white/10 flex items-center gap-3">
+              ${still}
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-semibold truncate">E${ep.episode_number} • ${esc(ep.name)}</div>
+                <div class="text-xs text-white/60 truncate">${esc(ep.air_date || "")}</div>
+              </div>
+              <button class="btn chip rounded-2xl px-3 py-1.5 text-sm" data-add-ep="${ep.episode_number}">
+                Add
+              </button>
+            </div>
+          `;
+        }).join("");
+
+        document.getElementById("addSeasonBtn").addEventListener("click", async () => {
+          const format = document.getElementById("format").value;
+          const ratingRaw = document.getElementById("rating").value;
+          const rating = ratingRaw === "" ? null : Number(ratingRaw);
+          const comment = document.getElementById("comment").value;
+
+          const payload = {
+            user_id: sessionUser.id,
+            tmdb_id: d.tmdb_id,
+            media_type: "tv",
+            scope: "season",
+            title: d.title,
+            year: d.year,
+            poster_url: d.poster_url || null,
+            backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
+            rating,
+            comment,
+            genre: d.genre,
+            cast: d.cast,
+            overview: d.overview,
+            runtime: d.runtime,
+            season_number,
+            episode_number: null,
+          };
+          await upsertItem(payload);
+        });
+
+        [...epList.querySelectorAll("button[data-add-ep]")].forEach(b => {
+          b.addEventListener("click", async () => {
+            const episode_number = Number(b.dataset.addEp);
+            const format = document.getElementById("format").value;
+            const ratingRaw = document.getElementById("rating").value;
+            const rating = ratingRaw === "" ? null : Number(ratingRaw);
+            const comment = document.getElementById("comment").value;
+
+            const ep = episodes.find(e => e.episode_number === episode_number);
+
+            const payload = {
+              user_id: sessionUser.id,
+              tmdb_id: d.tmdb_id,
+              media_type: "tv",
+              scope: "episode",
+              title: d.title,
+              year: d.year,
+              poster_url: d.poster_url || null,
+              backdrop_url: d.backdrop_url || null,
+        ...(USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {}),
+        format,
+              rating,
+              comment,
+              genre: d.genre,
+              cast: d.cast,
+              overview: ep?.overview || d.overview,
+              runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime,
+              season_number,
+              episode_number,
+            };
+            await upsertItem(payload);
+          });
+        });
+      });
+    }
+  }
+
+>>>>>>> parent of c48667f (episode bug fix)
   function showItemModal(row) {
     const titleLine =
       row.scope === "season" ? `${row.title} • Season ${row.season_number}` :
