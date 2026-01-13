@@ -1,4 +1,4 @@
-/* NexaVault Media Catalog — stable build (v20)
+/* NexaVault Media Catalog — stable build (v21)
    - GitHub Pages + PWA
    - Supabase Auth + DB
    - TMDB search/details
@@ -27,6 +27,8 @@
   const signInBtn = document.getElementById("signInBtn");
   const signUpBtn = document.getElementById("signUpBtn");
 
+  const forgotPwBtn = document.getElementById("forgotPwBtn");
+
   const profileBtn = document.getElementById("profileBtn");
   const profileMenu = document.getElementById("profileMenu");
   const profileEmail = document.getElementById("profileEmail");
@@ -45,6 +47,8 @@
   const librarySearch = document.getElementById("librarySearch");
   const sortBy = document.getElementById("sortBy");
   const minRating = document.getElementById("minRating");
+  const filterGenre = document.getElementById("filterGenre");
+  const groupBy = document.getElementById("groupBy");
   const statsText = document.getElementById("statsText");
 
   const grid = document.getElementById("grid");
@@ -54,11 +58,32 @@
   const modalBody = document.getElementById("modalBody");
   const toast = document.getElementById("toast");
 
+  const filtersToggle = document.getElementById("filtersToggle");
+  const filtersPanel = document.getElementById("filtersPanel");
+  const filtersToggleIcon = document.getElementById("filtersToggleIcon");
+
   // ---- Helpers
   const esc = (s) =>
     (s ?? "").toString().replace(/[&<>"']/g, (m) => ({
       "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;"
     }[m]));
+
+function parseHashParams() {
+  // Supabase sends recovery tokens in URL hash like:
+  // #access_token=...&refresh_token=...&type=recovery
+  const hash = (window.location.hash || "").replace(/^#/, "");
+  const params = new URLSearchParams(hash);
+  const obj = {};
+  for (const [k, v] of params.entries()) obj[k] = v;
+  return obj;
+}
+
+function clearUrlHash() {
+  if (window.location.hash) {
+    history.replaceState(null, document.title, window.location.pathname + window.location.search);
+  }
+}
+
 
   function showToast(message) {
     if (!toast) return;
@@ -206,6 +231,7 @@
       return;
     }
     library = data || [];
+    updateGenreFilterOptions();
     renderLibrary();
   }
 
@@ -271,11 +297,76 @@
     return true;
   }
 
-  // ---- Filters + sorting
+// ---- Filters + sorting
+function splitGenres(genreStr) {
+  return (genreStr || "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function updateGenreFilterOptions() {
+  if (!filterGenre) return;
+  const selected = filterGenre.value || "all";
+
+  const set = new Set();
+  (library || []).forEach(row => splitGenres(row.genre).forEach(g => set.add(g)));
+  const genres = Array.from(set).sort((a, b) => a.localeCompare(b));
+
+  // Rebuild options safely (no HTML encoding problems in values)
+  filterGenre.innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = "All genres";
+  filterGenre.appendChild(optAll);
+
+  genres.forEach(g => {
+    const opt = document.createElement("option");
+    opt.value = g;
+    opt.textContent = g;
+    filterGenre.appendChild(opt);
+  });
+
+  const stillValid = selected === "all" || genres.includes(selected);
+  filterGenre.value = stillValid ? selected : "all";
+}
+
+function getGroupKey(row, mode) {
+  switch (mode) {
+    case "genre": {
+      const gs = splitGenres(row.genre);
+      return gs[0] || "Unknown genre";
+    }
+    case "format":
+      return (row.format || "Digital") || "Digital";
+    case "media_type":
+      return row.media_type === "tv" ? "TV" : "Movies";
+    case "scope":
+      return row.scope ? row.scope.charAt(0).toUpperCase() + row.scope.slice(1) : "Unknown";
+    case "year":
+      return row.year ? row.year.toString() : "Unknown year";
+    case "rating_bucket": {
+      const v = (row.rating === null || row.rating === undefined || row.rating === "") ? null : Number(row.rating);
+      if (v === null || !Number.isFinite(v)) return "Unrated";
+      if (v >= 9) return "⭐ 9–10";
+      if (v >= 8) return "⭐ 8–8.9";
+      if (v >= 7) return "⭐ 7–7.9";
+      if (v >= 6) return "⭐ 6–6.9";
+      if (v >= 5) return "⭐ 5–5.9";
+      return "⭐ <5";
+    }
+    default:
+      return "";
+  }
+}
+
   function libraryFiltersMatch(row) {
     const scopeOk = (filterScope?.value || "all") === "all" || row.scope === filterScope.value;
     const typeOk = (filterMediaType?.value || "all") === "all" || row.media_type === filterMediaType.value;
     const formatOk = (filterFormat?.value || "all") === "all" || (row.format || "Digital") === filterFormat.value;
+
+    const genreSel = (filterGenre?.value || "all");
+    const genreOk = genreSel === "all" || splitGenres(row.genre).some(g => g.toLowerCase() === genreSel.toLowerCase());
 
     const minR = Number(minRating?.value || 0);
     const rv = row.rating === null || row.rating === undefined || row.rating === "" ? null : Number(row.rating);
@@ -293,7 +384,7 @@
     ].map(v => (v || "").toString().toLowerCase());
     const searchOk = !q || hay.some(v => v.includes(q));
 
-    return scopeOk && typeOk && formatOk && ratingOk && searchOk;
+    return scopeOk && typeOk && formatOk && genreOk && ratingOk && searchOk;
   }
 
   function sortLibraryRows(rows) {
@@ -330,58 +421,115 @@
   }
 
   function renderLibrary() {
-    const filtered = sortLibraryRows((library||[]).filter(libraryFiltersMatch));
-    if (statsText) statsText.textContent = `${filtered.length} item${filtered.length===1?"":"s"} (of ${library.length})`;
+  const groupMode = (groupBy?.value || "none");
+  const grouped = groupMode !== "none";
 
-    if (!filtered.length) {
-      grid.innerHTML = "";
-      emptyState?.classList.remove("hidden");
-      return;
-    }
-    emptyState?.classList.add("hidden");
+  const filtered = sortLibraryRows((library || []).filter(libraryFiltersMatch));
+  if (statsText) statsText.textContent = `${filtered.length} item${filtered.length===1?"":"s"} (of ${library.length})`;
 
-    grid.innerHTML = filtered.map(row => {
-      const poster = row.poster_url || "";
-      const scopeLabel =
-        row.scope === "season" ? `Season ${row.season_number}` :
-        row.scope === "episode" ? `S${row.season_number}E${row.episode_number}` :
-        "Title";
+  if (!filtered.length) {
+    grid.innerHTML = "";
+    emptyState?.classList.remove("hidden");
+    // reset grid layout
+    grid.className = "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-5";
+    return;
+  }
+  emptyState?.classList.add("hidden");
 
-      const subtitle =
-        row.scope === "title" ? "" :
-        `<div class="text-xs text-white/60 mt-1 truncate">${esc(scopeLabel)}</div>`;
+  const cardHtml = (row) => {
+    const poster = row.poster_url || "";
+    const scopeLabel =
+      row.scope === "season" ? `Season ${row.season_number}` :
+      row.scope === "episode" ? `S${row.season_number}E${row.episode_number}` :
+      "Title";
 
-      const rating = (row.rating ?? null);
+    const subtitle =
+      row.scope === "title" ? "" :
+      `<div class="text-xs text-white/60 mt-1 truncate">${esc(scopeLabel)}</div>`;
+
+    const rating = (row.rating ?? null);
+    return `
+      <button class="poster-card rounded-2xl overflow-hidden text-left" data-rowid="${row.id}">
+        <div class="relative">
+          <div class="aspect-[2/3] bg-black/25">
+            ${poster ? `<img src="${esc(poster)}" class="w-full h-full object-cover" loading="lazy" />`
+                      : `<div class="w-full h-full flex items-center justify-center text-3xl">🎬</div>`}
+          </div>
+          <div class="absolute top-2 left-2 chip px-2 py-1 rounded-xl text-xs">${row.media_type==="tv"?"📺":"🎬"} ${esc(scopeLabel)}</div>
+          ${rating !== null && rating !== undefined && rating !== "" ? `<div class="absolute top-2 right-2 chip px-2 py-1 rounded-xl text-xs">⭐ ${rating}/10</div>` : ""}
+        </div>
+        <div class="p-3">
+          <div class="font-semibold text-sm truncate">${esc(row.title)}</div>
+          ${subtitle}
+          <div class="text-xs text-white/65 mt-2 flex items-center justify-between gap-2">
+            <span class="truncate">${esc(row.year || "")}</span>
+            <span class="chip px-2 py-0.5 rounded-full">${esc(row.format || "Digital")}</span>
+          </div>
+        </div>
+      </button>
+    `;
+  };
+
+  if (!grouped) {
+    // grid layout
+    grid.className = "grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-5";
+    grid.innerHTML = filtered.map(cardHtml).join("");
+  } else {
+    // section layout
+    grid.className = "space-y-6";
+
+    const groups = new Map();
+    filtered.forEach(row => {
+      const key = getGroupKey(row, groupMode) || "Other";
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+
+    // sort group keys
+    const keys = Array.from(groups.keys()).sort((a,b) => a.localeCompare(b));
+
+    grid.innerHTML = keys.map((key, idx) => {
+      const rows = groups.get(key) || [];
+      const inner = rows.map(cardHtml).join("");
       return `
-        <button class="poster-card rounded-2xl overflow-hidden text-left" data-rowid="${row.id}">
-          <div class="relative">
-            <div class="aspect-[2/3] bg-black/25">
-              ${poster ? `<img src="${esc(poster)}" class="w-full h-full object-cover" loading="lazy" />`
-                        : `<div class="w-full h-full flex items-center justify-center text-3xl">🎬</div>`}
+        <div class="glass rounded-3xl p-4 border border-white/10">
+          <button type="button" class="w-full flex items-center justify-between gap-3 btn" data-group-toggle="${idx}">
+            <div class="text-left">
+              <div class="text-sm font-semibold">${esc(key)}</div>
+              <div class="text-xs text-white/60">${rows.length} item${rows.length===1?"":"s"}</div>
             </div>
-            <div class="absolute top-2 left-2 chip px-2 py-1 rounded-xl text-xs">${row.media_type==="tv"?"📺":"🎬"} ${esc(scopeLabel)}</div>
-            ${rating !== null && rating !== undefined && rating !== "" ? `<div class="absolute top-2 right-2 chip px-2 py-1 rounded-xl text-xs">⭐ ${rating}/10</div>` : ""}
+            <div class="text-white/60" data-group-icon="${idx}">▾</div>
+          </button>
+          <div class="mt-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-5" data-group-panel="${idx}">
+            ${inner}
           </div>
-          <div class="p-3">
-            <div class="font-semibold text-sm truncate">${esc(row.title)}</div>
-            ${subtitle}
-            <div class="text-xs text-white/65 mt-2 flex items-center justify-between gap-2">
-              <span class="truncate">${esc(row.year || "")}</span>
-              <span class="chip px-2 py-0.5 rounded-full">${esc(row.format || "Digital")}</span>
-            </div>
-          </div>
-        </button>
+        </div>
       `;
     }).join("");
-
-    [...grid.querySelectorAll("button[data-rowid]")].forEach(card => {
-      card.addEventListener("click", () => {
-        const rowId = Number(card.dataset.rowid);
-        const row = library.find(r => r.id === rowId);
-        if (row) showItemModal(row);
-      });
-    });
   }
+
+  // Card click handlers
+  [...grid.querySelectorAll("button[data-rowid]")].forEach(card => {
+    card.addEventListener("click", () => {
+      const rowId = Number(card.dataset.rowid);
+      const row = library.find(r => r.id === rowId);
+      if (row) showItemModal(row);
+    });
+  });
+
+  // Group collapse toggles (works on all screens, handy on mobile)
+  [...grid.querySelectorAll("button[data-group-toggle]")].forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.dataset.groupToggle;
+      const panel = grid.querySelector(`[data-group-panel="${id}"]`);
+      const icon = grid.querySelector(`[data-group-icon="${id}"]`);
+      if (!panel) return;
+      panel.classList.toggle("hidden");
+      if (icon) icon.textContent = panel.classList.contains("hidden") ? "▸" : "▾";
+    });
+  });
+}
+
 
   // ---- Modals: view/edit item
   function showItemModal(row) {
@@ -832,6 +980,111 @@
   }
 
   // ---- Auth
+async function sendPasswordRecoveryEmail(email) {
+  const cleanEmail = (email || "").trim();
+  if (!cleanEmail) {
+    showToast("Enter your email");
+    return;
+  }
+
+  // For GitHub Pages, include the full path (repo) in redirect URL
+  const redirectTo = window.location.origin + window.location.pathname;
+
+  const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, { redirectTo });
+  if (error) {
+    console.error(error);
+    showToast(error.message || "Could not send reset email");
+    return;
+  }
+  showToast("Reset email sent");
+  authMsg.textContent = "Password reset link sent. Check your inbox (and spam).";
+  closeModal();
+}
+
+function showPasswordRecoveryRequestModal() {
+  const preset = (authEmail?.value || "").trim();
+  openModal(`
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="text-lg font-semibold">Reset your password</div>
+        <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+      </div>
+
+      <div class="text-sm text-white/70">
+        Enter the email you used for this account. We’ll send a secure reset link.
+      </div>
+
+      <input id="pwResetEmail" type="email" value="${esc(preset)}" placeholder="Email"
+        class="w-full rounded-2xl px-4 py-3 input" />
+
+      <button id="pwResetSend" class="btn w-full rounded-2xl px-4 py-3 bg-indigo-500/20 hover:bg-indigo-500/25 border border-indigo-400/20">
+        Send reset link
+      </button>
+    </div>
+  `);
+
+  document.getElementById("mClose").addEventListener("click", closeModal);
+  document.getElementById("pwResetSend").addEventListener("click", async () => {
+    const email = document.getElementById("pwResetEmail").value;
+    await sendPasswordRecoveryEmail(email);
+  });
+}
+
+function showSetNewPasswordModal() {
+  openModal(`
+    <div class="space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="text-lg font-semibold">Set a new password</div>
+        <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+      </div>
+
+      <div class="text-sm text-white/70">
+        Choose a new password for your account.
+      </div>
+
+      <input id="newPw1" type="password" placeholder="New password"
+        class="w-full rounded-2xl px-4 py-3 input" />
+      <input id="newPw2" type="password" placeholder="Confirm new password"
+        class="w-full rounded-2xl px-4 py-3 input" />
+
+      <button id="pwUpdateBtn" class="btn w-full rounded-2xl px-4 py-3 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+        Update password
+      </button>
+
+      <div class="text-xs text-white/60">
+        Tip: After saving, you’ll be signed in automatically.
+      </div>
+    </div>
+  `);
+
+  document.getElementById("mClose").addEventListener("click", closeModal);
+  document.getElementById("pwUpdateBtn").addEventListener("click", async () => {
+    const p1 = document.getElementById("newPw1").value || "";
+    const p2 = document.getElementById("newPw2").value || "";
+    if (p1.length < 6) return showToast("Use 6+ characters");
+    if (p1 !== p2) return showToast("Passwords don’t match");
+
+    const { error } = await supabase.auth.updateUser({ password: p1 });
+    if (error) {
+      console.error(error);
+      showToast(error.message || "Password update failed");
+      return;
+    }
+    showToast("Password updated");
+    clearUrlHash();
+    closeModal();
+    refreshSessionUI(0);
+  });
+}
+
+function maybeHandleRecoveryFromUrl() {
+  const hp = parseHashParams();
+  if (hp.type === "recovery") {
+    // Supabase will set a session via detectSessionInUrl:true
+    showSetNewPasswordModal();
+  }
+}
+
   async function refreshSessionUI(retry=0) {
     if (configLooksBad()) {
       authPanel?.classList.remove("hidden");
@@ -901,6 +1154,11 @@
     showToast("Account created");
   });
 
+  forgotPwBtn?.addEventListener("click", () => {
+    authMsg.textContent = "";
+    showPasswordRecoveryRequestModal();
+  });
+
   profileBtn?.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleProfileMenu();
@@ -915,14 +1173,39 @@
     refreshSessionUI(0);
   });
 
-  supabase.auth.onAuthStateChange(() => {
+  supabase.auth.onAuthStateChange((event) => {
+    if (event === "PASSWORD_RECOVERY") {
+      showSetNewPasswordModal();
+    }
     refreshSessionUI(0);
   });
 
   // ---- Library control listeners
-  [filterScope, filterMediaType, filterFormat, sortBy, minRating].filter(Boolean)
+  [filterScope, filterMediaType, filterFormat, filterGenre, sortBy, minRating, groupBy].filter(Boolean)
     .forEach(el => el.addEventListener("change", renderLibrary));
   librarySearch?.addEventListener("input", () => renderLibrary());
+// ---- Mobile: collapse filters panel
+let filtersOpen = false;
+function setFiltersPanelOpen(open) {
+  if (!filtersPanel) return;
+  const isDesktop = window.matchMedia("(min-width: 768px)").matches;
+  if (isDesktop) {
+    // Always open on desktop
+    filtersPanel.classList.remove("hidden");
+    filtersToggleIcon && (filtersToggleIcon.textContent = "▾");
+    return;
+  }
+  filtersOpen = !!open;
+  filtersPanel.classList.toggle("hidden", !filtersOpen);
+  if (filtersToggleIcon) filtersToggleIcon.textContent = filtersOpen ? "▴" : "▾";
+}
+
+filtersToggle?.addEventListener("click", () => setFiltersPanelOpen(!filtersOpen));
+window.addEventListener("resize", () => setFiltersPanelOpen(filtersOpen));
+// start collapsed on mobile
+setFiltersPanelOpen(false);
+
+
 
   // ---- PWA SW
   if ("serviceWorker" in navigator) {
@@ -933,4 +1216,5 @@
 
   // Boot
   refreshSessionUI(0);
+  maybeHandleRecoveryFromUrl();
 })();

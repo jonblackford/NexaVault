@@ -209,7 +209,14 @@
             </div>
 
             <div id="authMsg" class="text-sm text-white/70"></div>
-          </form>
+          
+            <div class="flex items-center justify-between pt-1">
+              <button id="forgotPwBtn" type="button" class="text-xs text-white/70 hover:text-white underline underline-offset-4">
+                Forgot password?
+              </button>
+              <div class="text-xs text-white/50">We’ll email a reset link.</div>
+            </div>
+</form>
         </div>
       </div>
     </section>
@@ -247,51 +254,71 @@
 
       <!-- Library filters -->
       <div class="flex flex-col md:flex-row md:items-center gap-3">
-        <div class="glass rounded-2xl p-3 flex flex-col md:flex-row gap-2 w-full md:w-auto">
-          <select id="filterScope" class="rounded-xl px-3 py-2 input">
-            <option value="all">All entries</option>
-            <option value="title">Titles</option>
-            <option value="season">Seasons</option>
-            <option value="episode">Episodes</option>
-          </select>
-          <select id="filterMediaType" class="rounded-xl px-3 py-2 input">
-            <option value="all">Movies + TV</option>
-            <option value="movie">Movies</option>
-            <option value="tv">TV</option>
-          </select>
-          <select id="filterFormat" class="rounded-xl px-3 py-2 input">
-            <option value="all">All formats</option>
-            <option value="Blu-ray">Blu-ray</option>
-            <option value="DVD">DVD</option>
-            <option value="Digital">Digital</option>
-            <option value="4K Ultra HD">4K Ultra HD</option>
-            <option value="VHS">VHS</option>
-          </select>
-          <input id="librarySearch" placeholder="Search your library…" class="rounded-xl px-3 py-2 input w-full md:w-56" />
-          <select id="sortBy" class="rounded-xl px-3 py-2 input">
-            <option value="added_desc">Added: newest</option>
-            <option value="added_asc">Added: oldest</option>
-            <option value="release_desc">Release: newest</option>
-            <option value="release_asc">Release: oldest</option>
-            <option value="rating_desc">Rating: high → low</option>
-            <option value="rating_asc">Rating: low → high</option>
-            <option value="title_asc">Title: A → Z</option>
-            <option value="title_desc">Title: Z → A</option>
-          </select>
-          <select id="minRating" class="rounded-xl px-3 py-2 input">
-            <option value="0">Any rating</option>
-            <option value="10">10+</option>
-            <option value="9">9+</option>
-            <option value="8">8+</option>
-            <option value="7">7+</option>
-            <option value="6">6+</option>
-            <option value="5">5+</option>
-            <option value="4">4+</option>
-            <option value="3">3+</option>
-            <option value="2">2+</option>
-            <option value="1">1+</option>
-          </select>
-        </div>
+        <div class="w-full md:w-auto">
+  <button id="filtersToggle" type="button" class="md:hidden btn w-full glass rounded-2xl px-4 py-3 flex items-center justify-between border border-white/10">
+    <span class="text-sm font-medium">Filters &amp; sorting</span>
+    <span id="filtersToggleIcon" class="text-white/70">▾</span>
+  </button>
+
+  <div id="filtersPanel" class="glass rounded-2xl p-3 flex flex-col md:flex-row gap-2 w-full md:w-auto hidden md:flex">
+    <select id="filterScope" class="rounded-xl px-3 py-2 input">
+      <option value="all">All entries</option>
+      <option value="title">Titles</option>
+      <option value="season">Seasons</option>
+      <option value="episode">Episodes</option>
+    </select>
+    <select id="filterMediaType" class="rounded-xl px-3 py-2 input">
+      <option value="all">Movies + TV</option>
+      <option value="movie">Movies</option>
+      <option value="tv">TV</option>
+    </select>
+    <select id="filterFormat" class="rounded-xl px-3 py-2 input">
+      <option value="all">All formats</option>
+      <option value="Blu-ray">Blu-ray</option>
+      <option value="DVD">DVD</option>
+      <option value="Digital">Digital</option>
+      <option value="4K Ultra HD">4K Ultra HD</option>
+      <option value="VHS">VHS</option>
+    </select>
+    <select id="filterGenre" class="rounded-xl px-3 py-2 input">
+      <option value="all">All genres</option>
+    </select>
+    <input id="librarySearch" placeholder="Search your library…" class="rounded-xl px-3 py-2 input w-full md:w-56" />
+    <select id="sortBy" class="rounded-xl px-3 py-2 input">
+      <option value="added_desc">Added: newest</option>
+      <option value="added_asc">Added: oldest</option>
+      <option value="release_desc">Release: newest</option>
+      <option value="release_asc">Release: oldest</option>
+      <option value="rating_desc">Rating: high → low</option>
+      <option value="rating_asc">Rating: low → high</option>
+      <option value="title_asc">Title: A → Z</option>
+      <option value="title_desc">Title: Z → A</option>
+    </select>
+    <select id="minRating" class="rounded-xl px-3 py-2 input">
+      <option value="0">Any rating</option>
+      <option value="10">10+</option>
+      <option value="9">9+</option>
+      <option value="8">8+</option>
+      <option value="7">7+</option>
+      <option value="6">6+</option>
+      <option value="5">5+</option>
+      <option value="4">4+</option>
+      <option value="3">3+</option>
+      <option value="2">2+</option>
+      <option value="1">1+</option>
+    </select>
+    <select id="groupBy" class="rounded-xl px-3 py-2 input">
+      <option value="none">Group: none</option>
+      <option value="genre">Group: genre</option>
+      <option value="format">Group: format</option>
+      <option value="media_type">Group: media type</option>
+      <option value="year">Group: year</option>
+      <option value="rating_bucket">Group: rating</option>
+      <option value="scope">Group: entry type</option>
+    </select>
+  </div>
+</div>
+
 
         <div class="ml-auto glass rounded-2xl px-4 py-3 text-sm text-white/80">
           <span id="statsText">0 items</span>
