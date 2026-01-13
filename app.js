@@ -1418,11 +1418,18 @@ function showItemModal(row) {
         .eq("media_type", keys.media_type)
         .eq("scope", keys.scope);
 
-      if (keys.season_number === null || keys.season_number === undefined) q = q.is("season_number", null);
-      else q = q.eq("season_number", keys.season_number);
+      if (keys.season_number === null || keys.season_number === undefined) {
+        // Some older schemas normalize null -> 0; accept either so we can reliably fetch the inserted row id.
+        q = q.or("season_number.is.null,season_number.eq.0");
+      } else {
+        q = q.eq("season_number", keys.season_number);
+      }
 
-      if (keys.episode_number === null || keys.episode_number === undefined) q = q.is("episode_number", null);
-      else q = q.eq("episode_number", keys.episode_number);
+      if (keys.episode_number === null || keys.episode_number === undefined) {
+        q = q.or("episode_number.is.null,episode_number.eq.0");
+      } else {
+        q = q.eq("episode_number", keys.episode_number);
+      }
 
       const { data, error } = await q
         .order("created_at", { ascending: false })
@@ -1463,16 +1470,38 @@ function showItemModal(row) {
 
     async function upsertAndAssign(payload) {
       const ok = await tryUpsert(payload);
-      if (!ok) return null;
-      const id = await findMediaItemId({
+      if (!ok) return { ok: false, id: null };
+
+      let id = await findMediaItemId({
         tmdb_id: payload.tmdb_id,
         media_type: payload.media_type,
         scope: payload.scope,
         season_number: payload.season_number,
         episode_number: payload.episode_number
       });
-      if (id) await bulkAssignCollections([id]);
-      return id;
+
+      // If we couldn't find the row id (often caused by legacy null/0 normalization),
+      // still treat the save as successful so the UI doesn't say "Save failed" when it actually saved.
+      if (!id) {
+        if (payload.scope === "title") {
+          id = await findMediaItemId({
+            tmdb_id: payload.tmdb_id,
+            media_type: payload.media_type,
+            scope: payload.scope,
+            season_number: null,
+            episode_number: null
+          });
+        }
+      }
+
+      if (id) {
+        await bulkAssignCollections([id]); // non-fatal; bulkAssignCollections handles its own toasts
+      } else {
+        if (typeof selectedColIds !== "undefined" && selectedColIds && selectedColIds.size) {
+          showToast("Saved, but couldn’t assign collections");
+        }
+      }
+      return { ok: true, id };
     }
 
     document.getElementById("saveTitleBtn").addEventListener("click", async () => {
@@ -1498,10 +1527,9 @@ function showItemModal(row) {
         runtime: d.runtime
       };
 
-      const id = await upsertAndAssign(payload);
-      if (!id) return showToast("Save failed");
-
-      await loadLibrary();
+      const res = await upsertAndAssign(payload);
+      if (!res.ok) return showToast("Save failed");
+await loadLibrary();
       showToast("Saved");
       clearTmdbSearchUI();
       closeModal();
@@ -1594,9 +1622,9 @@ function showItemModal(row) {
             overview: d.overview,
             runtime: d.runtime
           };
-          const id = await upsertAndAssign(payload);
-          if (!id) return showToast("Save failed");
-          await loadLibrary();
+          const res = await upsertAndAssign(payload);
+          if (!res.ok) return showToast("Save failed");
+await loadLibrary();
           showToast(`Season ${season_number} saved`);
           clearTmdbSearchUI();
         });
@@ -1627,9 +1655,9 @@ function showItemModal(row) {
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime
             };
-            const id = await upsertAndAssign(payload);
-            if (!id) return showToast("Save failed");
-            await loadLibrary();
+            const res = await upsertAndAssign(payload);
+            if (!res.ok) return showToast("Save failed");
+await loadLibrary();
             showToast(`Added S${season_number}E${episode_number}`);
               clearTmdbSearchUI();
           });
