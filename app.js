@@ -1436,8 +1436,6 @@ function showItemModal(row) {
       return data?.[0]?.id ?? null;
     }
 
-      return data?.id ?? null;
-    }
 
     async function bulkAssignCollections(mediaItemIds) {
       if (!selectedColIds.size) return true;
