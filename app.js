@@ -48,8 +48,28 @@
   const sortBy = document.getElementById("sortBy");
   const minRating = document.getElementById("minRating");
   const filterGenre = document.getElementById("filterGenre");
+  const filterCollection = document.getElementById("filterCollection");
+  const manageCollectionsBtn = document.getElementById("manageCollectionsBtn");
   const groupBy = document.getElementById("groupBy");
   const statsText = document.getElementById("statsText");
+
+  const tabLibrary = document.getElementById("tabLibrary");
+  const tabCollections = document.getElementById("tabCollections");
+  const libraryView = document.getElementById("libraryView");
+  const collectionsView = document.getElementById("collectionsView");
+  const collectionsSearch = document.getElementById("collectionsSearch");
+  const collectionsManageBtn = document.getElementById("collectionsManageBtn");
+  const collectionsHome = document.getElementById("collectionsHome");
+  const collectionsGrid = document.getElementById("collectionsGrid");
+  const collectionsEmpty = document.getElementById("collectionsEmpty");
+  const collectionDetail = document.getElementById("collectionDetail");
+  const collectionBackBtn = document.getElementById("collectionBackBtn");
+  const collectionDetailTitle = document.getElementById("collectionDetailTitle");
+  const collectionDetailMeta = document.getElementById("collectionDetailMeta");
+  const collectionViewInLibraryBtn = document.getElementById("collectionViewInLibraryBtn");
+  const collectionItemsGrid = document.getElementById("collectionItemsGrid");
+  const collectionItemsEmpty = document.getElementById("collectionItemsEmpty");
+
 
   const grid = document.getElementById("grid");
   const emptyState = document.getElementById("emptyState");
@@ -148,6 +168,8 @@ function clearUrlHash() {
   // ---- State
   let sessionUser = null;
   let library = [];
+  let collections = [];
+  let collectionLinksByItem = new Map(); // key: String(media_item_id) -> Set(collection_id)
   let searchType = "all";
 
   // ---- TMDB
@@ -232,7 +254,9 @@ function clearUrlHash() {
     }
     library = data || [];
     updateGenreFilterOptions();
+    await loadCollectionsAndLinks();
     renderLibrary();
+    refreshCollectionsUI();
   }
 
   async function tryUpsert(payload) {
@@ -298,6 +322,8 @@ function clearUrlHash() {
   }
 
 // ---- Filters + sorting
+function safeKey(v) { return (v === null || v === undefined) ? "" : String(v); }
+
 function splitGenres(genreStr) {
   return (genreStr || "")
     .split(",")
@@ -331,6 +357,485 @@ function updateGenreFilterOptions() {
   filterGenre.value = stillValid ? selected : "all";
 }
 
+// ---- Collections (real, synced to Supabase)
+function getCollectionName(id) {
+  const c = (collections || []).find(x => x.id === id);
+  return c ? c.name : "Unknown collection";
+}
+
+function updateCollectionFilterOptions() {
+  if (!filterCollection) return;
+  const selected = filterCollection.value || "all";
+
+  filterCollection.innerHTML = "";
+  const optAll = document.createElement("option");
+  optAll.value = "all";
+  optAll.textContent = "All collections";
+  filterCollection.appendChild(optAll);
+
+  (collections || []).forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c.id;
+    opt.textContent = c.name;
+    filterCollection.appendChild(opt);
+  });
+
+  const stillValid = selected === "all" || (collections || []).some(c => c.id === selected);
+  filterCollection.value = stillValid ? selected : "all";
+}
+
+async function loadCollectionsAndLinks() {
+  // Graceful if tables aren't installed yet
+  if (!sessionUser) return;
+
+  // Collections
+  const cRes = await supabase.from("collections").select("*").order("name", { ascending: true });
+  if (cRes.error) {
+    // If user hasn't run the SQL yet, hide collections UI instead of breaking the app.
+    const msg = (cRes.error.message || "").toLowerCase();
+    if (msg.includes("does not exist") || msg.includes("relation") || msg.includes("schema cache")) {
+      collections = [];
+      collectionLinksByItem = new Map();
+      updateCollectionFilterOptions();
+      if (manageCollectionsBtn) manageCollectionsBtn.classList.add("hidden");
+      if (filterCollection) filterCollection.classList.add("hidden");
+      return;
+    }
+    console.error(cRes.error);
+    showToast("Failed to load collections");
+    return;
+  }
+
+  collections = cRes.data || [];
+  if (manageCollectionsBtn) manageCollectionsBtn.classList.remove("hidden");
+  if (filterCollection) filterCollection.classList.remove("hidden");
+
+  // Links
+  const liRes = await supabase
+    .from("collection_items")
+    .select("collection_id, media_item_id");
+  if (liRes.error) {
+    console.error(liRes.error);
+    showToast("Failed to load collection links");
+    return;
+  }
+
+  collectionLinksByItem = new Map();
+  (liRes.data || []).forEach(r => {
+    const k = safeKey(r.media_item_id);
+    if (!collectionLinksByItem.has(k)) collectionLinksByItem.set(k, new Set());
+    collectionLinksByItem.get(k).add(r.collection_id);
+  });
+
+  updateCollectionFilterOptions();
+  refreshCollectionsUI();
+}
+
+function getItemCollectionIds(mediaItemId) {
+  const k = safeKey(mediaItemId);
+  return collectionLinksByItem.get(k) || new Set();
+}
+
+async function syncItemCollections(mediaItemId, selectedIds) {
+  if (!sessionUser) return true;
+  const current = new Set(Array.from(getItemCollectionIds(mediaItemId)));
+  const selected = new Set(Array.from(selectedIds || []));
+
+  const toAdd = [];
+  const toRemove = [];
+
+  for (const id of selected) if (!current.has(id)) toAdd.push(id);
+  for (const id of current) if (!selected.has(id)) toRemove.push(id);
+
+  if (toAdd.length) {
+    const rows = toAdd.map(cid => ({
+      user_id: sessionUser.id,
+      collection_id: cid,
+      media_item_id: mediaItemId
+    }));
+    const { error } = await supabase.from("collection_items").insert(rows);
+    if (error) {
+      console.error(error);
+      showToast("Couldn’t add to collection");
+      return false;
+    }
+  }
+
+  if (toRemove.length) {
+    const { error } = await supabase
+      .from("collection_items")
+      .delete()
+      .eq("media_item_id", mediaItemId)
+      .in("collection_id", toRemove);
+    if (error) {
+      console.error(error);
+      showToast("Couldn’t remove from collection");
+      return false;
+    }
+  }
+
+  await loadCollectionsAndLinks();
+  return true;
+}
+
+function openCollectionsManager() {
+  const counts = new Map();
+  // compute counts from current mapping
+  for (const [k, set] of collectionLinksByItem.entries()) {
+    for (const cid of set) counts.set(cid, (counts.get(cid) || 0) + 1);
+  }
+
+  openModal(`
+    <div class="space-y-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-xs uppercase tracking-[0.25em] text-white/60">Collections</div>
+          <div class="text-2xl font-semibold">Manage collections</div>
+          <div class="text-sm text-white/70 mt-1">Create, rename, delete, and organize your library.</div>
+        </div>
+        <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+      </div>
+
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="font-semibold">Create new</div>
+        <div class="mt-3 grid md:grid-cols-[1fr,1fr,auto] gap-2">
+          <input id="newColName" class="rounded-2xl px-3 py-2 input" placeholder="Collection name (e.g., Marvel)" />
+          <input id="newColDesc" class="rounded-2xl px-3 py-2 input" placeholder="Description (optional)" />
+          <button id="createColBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+            Create
+          </button>
+        </div>
+      </div>
+
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="flex items-center justify-between">
+          <div class="font-semibold">Your collections</div>
+          <div class="text-xs text-white/60">${(collections||[]).length} total</div>
+        </div>
+
+        <div class="mt-3 space-y-2" style="max-height: 55vh; overflow:auto; -webkit-overflow-scrolling:touch;">
+          ${(collections||[]).map(c => {
+            const n = counts.get(c.id) || 0;
+            return `
+              <div class="glass rounded-2xl p-3 border border-white/10 flex items-center gap-3">
+                <div class="flex-1 min-w-0">
+                  <div class="font-semibold truncate">${esc(c.name)}</div>
+                  <div class="text-xs text-white/60 truncate">${esc(c.description || "")}</div>
+                </div>
+                <div class="text-xs chip rounded-full px-2 py-0.5">${n} item${n===1?"":"s"}</div>
+                <button class="btn chip rounded-2xl px-3 py-1.5 text-sm" data-edit-col="${c.id}">Edit</button>
+                <button class="btn rounded-2xl px-3 py-1.5 text-sm bg-red-500/15 hover:bg-red-500/20 border border-red-400/20" data-del-col="${c.id}">Delete</button>
+              </div>
+            `;
+          }).join("") || `<div class="text-sm text-white/70 py-6 text-center">No collections yet.</div>`}
+        </div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById("mClose").addEventListener("click", closeModal);
+
+  document.getElementById("createColBtn").addEventListener("click", async () => {
+    const name = (document.getElementById("newColName").value || "").trim();
+    const description = (document.getElementById("newColDesc").value || "").trim();
+    if (!name) return showToast("Name required");
+
+    const { error } = await supabase.from("collections").insert({
+      user_id: sessionUser.id,
+      name,
+      description: description || null
+    });
+    if (error) {
+      console.error(error);
+      showToast(error.message || "Couldn’t create collection");
+      return;
+    }
+    showToast("Collection created");
+    await loadCollectionsAndLinks();
+    openCollectionsManager(); // re-render modal
+  });
+
+  [...modalBody.querySelectorAll("[data-del-col]")].forEach(btn => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-del-col");
+      const col = (collections||[]).find(x => x.id === id);
+      if (!id) return;
+      if (!confirm(`Delete collection "${col?.name || "this collection"}"?`)) return;
+
+      const { error } = await supabase.from("collections").delete().eq("id", id);
+      if (error) {
+        console.error(error);
+        showToast(error.message || "Couldn’t delete collection");
+        return;
+      }
+      showToast("Collection deleted");
+      await loadCollectionsAndLinks();
+      openCollectionsManager();
+    });
+  });
+
+  [...modalBody.querySelectorAll("[data-edit-col]")].forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-edit-col");
+      const col = (collections||[]).find(x => x.id === id);
+      if (!col) return;
+
+      openModal(`
+        <div class="space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="text-lg font-semibold">Edit collection</div>
+            <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+          </div>
+
+          <div>
+            <label class="text-xs text-white/70">Name</label>
+            <input id="editColName" class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(col.name)}" />
+          </div>
+          <div>
+            <label class="text-xs text-white/70">Description</label>
+            <input id="editColDesc" class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${esc(col.description || "")}" />
+          </div>
+
+          <div class="flex gap-2">
+            <button id="saveColEdit" class="btn flex-1 rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">Save</button>
+            <button id="cancelColEdit" class="btn chip rounded-2xl px-4 py-2">Cancel</button>
+          </div>
+        </div>
+      `);
+
+      document.getElementById("mClose").addEventListener("click", () => openCollectionsManager());
+      document.getElementById("cancelColEdit").addEventListener("click", () => openCollectionsManager());
+      document.getElementById("saveColEdit").addEventListener("click", async () => {
+        const name = (document.getElementById("editColName").value || "").trim();
+        const description = (document.getElementById("editColDesc").value || "").trim();
+        if (!name) return showToast("Name required");
+
+        const { error } = await supabase
+          .from("collections")
+          .update({ name, description: description || null })
+          .eq("id", id);
+        if (error) {
+          console.error(error);
+          showToast(error.message || "Couldn’t update collection");
+          return;
+        }
+        showToast("Collection updated");
+        await loadCollectionsAndLinks();
+        openCollectionsManager();
+      });
+    });
+  });
+}
+
+
+
+// ---- Views: Library vs Collections
+let activeMainView = "library"; // "library" | "collections"
+let activeCollectionId = null;
+
+function setMainView(view) {
+  activeMainView = view === "collections" ? "collections" : "library";
+
+  if (libraryView) libraryView.classList.toggle("hidden", activeMainView !== "library");
+  if (collectionsView) collectionsView.classList.toggle("hidden", activeMainView !== "collections");
+
+  const setActiveBtn = (btn, on) => {
+    if (!btn) return;
+    btn.classList.toggle("bg-white/10", on);
+    btn.classList.toggle("border-white/10", on);
+    btn.classList.toggle("hover:bg-white/5", !on);
+    btn.classList.toggle("border-transparent", !on);
+  };
+  setActiveBtn(tabLibrary, activeMainView === "library");
+  setActiveBtn(tabCollections, activeMainView === "collections");
+
+  // When switching back to collections home, ensure detail state is consistent.
+  if (activeMainView === "collections") {
+    refreshCollectionsUI();
+  }
+}
+
+function collectionCounts() {
+  const counts = new Map();
+  for (const set of collectionLinksByItem.values()) {
+    for (const cid of set) counts.set(cid, (counts.get(cid) || 0) + 1);
+  }
+  return counts;
+}
+
+function renderCollectionsHome() {
+  if (!collectionsGrid || !collectionsEmpty) return;
+
+  const q = (collectionsSearch?.value || "").trim().toLowerCase();
+  const counts = collectionCounts();
+
+  const list = (collections || []).filter(c => {
+    if (!q) return true;
+    return (c.name || "").toLowerCase().includes(q) || (c.description || "").toLowerCase().includes(q);
+  });
+
+  if (!list.length) {
+    collectionsGrid.innerHTML = "";
+    collectionsEmpty.classList.toggle("hidden", (collections || []).length !== 0); // show empty only when truly none
+    return;
+  }
+  collectionsEmpty.classList.add("hidden");
+
+  collectionsGrid.innerHTML = list.map(c => {
+    const n = counts.get(c.id) || 0;
+    return `
+      <button class="glass rounded-3xl p-4 border border-white/10 text-left hover:bg-white/5 transition btn"
+        data-open-collection="${esc(c.id)}">
+        <div class="flex items-start justify-between gap-3">
+          <div class="min-w-0">
+            <div class="text-sm uppercase tracking-[0.25em] text-white/60">Collection</div>
+            <div class="text-lg font-semibold truncate">${esc(c.name)}</div>
+            ${c.description ? `<div class="text-sm text-white/65 mt-1 line-clamp-2">${esc(c.description)}</div>` : `<div class="text-sm text-white/50 mt-1">—</div>`}
+          </div>
+          <div class="chip rounded-full px-2 py-1 text-xs whitespace-nowrap">${n} item${n===1?"":"s"}</div>
+        </div>
+        <div class="mt-4 flex items-center justify-between text-sm text-white/70">
+          <span>Open</span>
+          <span class="text-white/60">›</span>
+        </div>
+      </button>
+    `;
+  }).join("");
+
+  [...collectionsGrid.querySelectorAll("button[data-open-collection]")].forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-open-collection");
+      openCollectionDetail(id);
+    });
+  });
+}
+
+function renderCollectionDetail() {
+  if (!collectionDetail || !collectionItemsGrid || !collectionItemsEmpty) return;
+  if (!activeCollectionId) return;
+
+  const col = (collections || []).find(c => c.id === activeCollectionId);
+  const colName = col?.name || "Collection";
+  const colDesc = col?.description || "";
+
+  if (collectionDetailTitle) collectionDetailTitle.textContent = colName;
+  const itemIds = new Set();
+  for (const [mid, set] of collectionLinksByItem.entries()) {
+    if (set.has(activeCollectionId)) itemIds.add(mid);
+  }
+
+  // Match media item ids (string compare)
+  const rows = (library || []).filter(r => itemIds.has(safeKey(r.id)));
+
+  if (collectionDetailMeta) collectionDetailMeta.textContent =
+    `${rows.length} item${rows.length===1?"":"s"}${colDesc ? " • " + colDesc : ""}`;
+
+  if (!rows.length) {
+    collectionItemsGrid.innerHTML = "";
+    collectionItemsEmpty.classList.remove("hidden");
+    return;
+  }
+  collectionItemsEmpty.classList.add("hidden");
+
+  const cardHtml = (row) => {
+    const poster = row.poster_url || "";
+    const scopeLabel =
+      row.scope === "season" ? `Season ${row.season_number}` :
+      row.scope === "episode" ? `S${row.season_number}E${row.episode_number}` :
+      "Title";
+    const rating = (row.rating ?? null);
+
+    return `
+      <button class="poster-card rounded-2xl overflow-hidden text-left relative" data-rowid="${esc(row.id)}">
+        <button class="absolute top-2 right-2 chip rounded-xl px-2 py-1 text-xs z-10"
+          title="Remove from collection" data-remove-from-collection="${esc(row.id)}">✕</button>
+
+        <div class="relative">
+          <div class="aspect-[2/3] bg-black/25">
+            ${poster ? `<img src="${esc(poster)}" class="w-full h-full object-cover" loading="lazy" />`
+                      : `<div class="w-full h-full flex items-center justify-center text-3xl">🎬</div>`}
+          </div>
+          <div class="absolute top-2 left-2 chip px-2 py-1 rounded-xl text-xs">${row.media_type==="tv"?"📺":"🎬"} ${esc(scopeLabel)}</div>
+          ${rating !== null && rating !== undefined && rating !== "" ? `<div class="absolute bottom-2 right-2 chip px-2 py-1 rounded-xl text-xs">⭐ ${rating}/10</div>` : ""}
+        </div>
+
+        <div class="p-3">
+          <div class="font-semibold text-sm truncate">${esc(row.title)}</div>
+          <div class="text-xs text-white/60 mt-1 truncate">${esc(row.year || "")}</div>
+        </div>
+      </button>
+    `;
+  };
+
+  collectionItemsGrid.innerHTML = sortLibraryRows(rows).map(cardHtml).join("");
+
+  // open item modal
+  [...collectionItemsGrid.querySelectorAll("button[data-rowid]")].forEach(card => {
+    card.addEventListener("click", (e) => {
+      // ignore clicks from remove button
+      if (e.target && e.target.closest("[data-remove-from-collection]")) return;
+      const rowId = card.getAttribute("data-rowid");
+      const row = (library || []).find(r => safeKey(r.id) === safeKey(rowId));
+      if (row) showItemModal(row);
+    });
+  });
+
+  // remove buttons
+  [...collectionItemsGrid.querySelectorAll("[data-remove-from-collection]")].forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const rowId = btn.getAttribute("data-remove-from-collection");
+      await removeItemFromCollection(activeCollectionId, rowId);
+    });
+  });
+}
+
+function openCollectionDetail(id) {
+  activeCollectionId = id;
+  if (collectionsHome) collectionsHome.classList.add("hidden");
+  if (collectionDetail) collectionDetail.classList.remove("hidden");
+  renderCollectionDetail();
+}
+
+function closeCollectionDetail() {
+  activeCollectionId = null;
+  if (collectionDetail) collectionDetail.classList.add("hidden");
+  if (collectionsHome) collectionsHome.classList.remove("hidden");
+  renderCollectionsHome();
+}
+
+async function removeItemFromCollection(collectionId, mediaItemId) {
+  if (!sessionUser) return;
+  const { error } = await supabase
+    .from("collection_items")
+    .delete()
+    .eq("collection_id", collectionId)
+    .eq("media_item_id", mediaItemId);
+  if (error) {
+    console.error(error);
+    showToast("Couldn’t remove item");
+    return;
+  }
+  showToast("Removed from collection");
+  await loadCollectionsAndLinks();
+  renderCollectionDetail();
+}
+
+function refreshCollectionsUI() {
+  if (!collectionsView) return;
+  // If no detail open, show home
+  if (!activeCollectionId) {
+    if (collectionDetail) collectionDetail.classList.add("hidden");
+    if (collectionsHome) collectionsHome.classList.remove("hidden");
+    renderCollectionsHome();
+  } else {
+    if (collectionsHome) collectionsHome.classList.add("hidden");
+    if (collectionDetail) collectionDetail.classList.remove("hidden");
+    renderCollectionDetail();
+  }
+}
+
 function getGroupKey(row, mode) {
   switch (mode) {
     case "genre": {
@@ -345,6 +850,13 @@ function getGroupKey(row, mode) {
       return row.scope ? row.scope.charAt(0).toUpperCase() + row.scope.slice(1) : "Unknown";
     case "year":
       return row.year ? row.year.toString() : "Unknown year";
+    case "collection": {
+      const ids = Array.from(getItemCollectionIds(row.id));
+      if (!ids.length) return "No collection";
+      // "Primary" collection = alphabetical by name
+      const names = ids.map(getCollectionName).filter(Boolean).sort((a,b)=>a.localeCompare(b));
+      return names[0] || "No collection";
+    }
     case "rating_bucket": {
       const v = (row.rating === null || row.rating === undefined || row.rating === "") ? null : Number(row.rating);
       if (v === null || !Number.isFinite(v)) return "Unrated";
@@ -372,6 +884,9 @@ function getGroupKey(row, mode) {
     const rv = row.rating === null || row.rating === undefined || row.rating === "" ? null : Number(row.rating);
     const ratingOk = minR === 0 || (rv !== null && rv >= minR);
 
+    const collectionSel = (filterCollection?.value || "all");
+    const colOk = collectionSel === "all" || getItemCollectionIds(row.id).has(collectionSel);
+
     const q = (librarySearch?.value || "").trim().toLowerCase();
     const hay = [
       row.title,
@@ -384,7 +899,7 @@ function getGroupKey(row, mode) {
     ].map(v => (v || "").toString().toLowerCase());
     const searchOk = !q || hay.some(v => v.includes(q));
 
-    return scopeOk && typeOk && formatOk && genreOk && ratingOk && searchOk;
+    return scopeOk && typeOk && formatOk && genreOk && ratingOk && colOk && searchOk;
   }
 
   function sortLibraryRows(rows) {
@@ -511,8 +1026,8 @@ function getGroupKey(row, mode) {
   // Card click handlers
   [...grid.querySelectorAll("button[data-rowid]")].forEach(card => {
     card.addEventListener("click", () => {
-      const rowId = Number(card.dataset.rowid);
-      const row = library.find(r => r.id === rowId);
+      const rowId = card.dataset.rowid;
+      const row = library.find(r => safeKey(r.id) === safeKey(rowId));
       if (row) showItemModal(row);
     });
   });
@@ -532,107 +1047,162 @@ function getGroupKey(row, mode) {
 
 
   // ---- Modals: view/edit item
-  function showItemModal(row) {
-    const titleLine =
-      row.scope === "season" ? `${row.title} • Season ${row.season_number}` :
-      row.scope === "episode" ? `${row.title} • S${row.season_number}E${row.episode_number}` :
-      row.title;
+function showItemModal(row) {
+  const titleLine =
+    row.scope === "season" ? `${row.title} • Season ${row.season_number}` :
+    row.scope === "episode" ? `${row.title} • S${row.season_number}E${row.episode_number}` :
+    row.title;
 
-    const poster = row.poster_url
-      ? `<img src="${esc(row.poster_url)}" class="w-full h-full object-cover" />`
-      : `<div class="w-full h-full flex items-center justify-center text-4xl">🎬</div>`;
+  const poster = row.poster_url
+    ? `<img src="${esc(row.poster_url)}" class="w-full h-full object-cover" />`
+    : `<div class="w-full h-full flex items-center justify-center text-4xl">🎬</div>`;
 
-    openModal(`
-      <div class="space-y-5">
-        <div class="flex items-start justify-between gap-3">
-          <div>
-            <div class="text-xs uppercase tracking-[0.25em] text-white/60">${row.media_type === "tv" ? "TV" : "MOVIE"} • ${row.scope.toUpperCase()}</div>
-            <div class="text-2xl font-semibold">${esc(titleLine)}</div>
-            <div class="text-sm text-white/70 mt-1">${esc(row.year || "")} • ${esc(row.runtime || "—")} • ${esc(row.genre || "—")}</div>
-          </div>
-          <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+  // snapshot current membership for the editor
+  const currentIds = new Set(Array.from(getItemCollectionIds(row.id)));
+
+  openModal(`
+    <div class="space-y-5">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-xs uppercase tracking-[0.25em] text-white/60">${row.media_type === "tv" ? "TV" : "MOVIE"} • ${row.scope.toUpperCase()}</div>
+          <div class="text-2xl font-semibold">${esc(titleLine)}</div>
+          <div class="text-sm text-white/70 mt-1">${esc(row.year || "")} • ${esc(row.runtime || "—")} • ${esc(row.genre || "—")}</div>
         </div>
+        <button id="mClose" class="btn chip rounded-2xl px-3 py-1.5">Close</button>
+      </div>
 
-        <div class="grid md:grid-cols-[170px,1fr] gap-5">
-          <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">${poster}</div>
+      <div class="grid md:grid-cols-[170px,1fr] gap-5">
+        <div class="rounded-3xl overflow-hidden border border-white/10 bg-black/20 aspect-[2/3]">${poster}</div>
 
-          <div class="space-y-4">
-            <div class="glass rounded-2xl p-4 border border-white/10">
-              <div class="text-sm text-white/70">Overview</div>
-              <div class="text-sm mt-1 leading-relaxed text-white/85">${esc(row.overview || "—")}</div>
-            </div>
+        <div class="space-y-4">
+          <div class="glass rounded-2xl p-4 border border-white/10">
+            <div class="text-sm text-white/70">Overview</div>
+            <div class="text-sm mt-1 leading-relaxed text-white/85">${esc(row.overview || "—")}</div>
+          </div>
 
-            <div class="glass rounded-2xl p-4 border border-white/10">
-              <div class="text-sm text-white/70">Cast</div>
-              <div class="text-sm mt-1">${esc((row.cast_list || row.cast) || "—")}</div>
-            </div>
+          <div class="glass rounded-2xl p-4 border border-white/10">
+            <div class="text-sm text-white/70">Cast</div>
+            <div class="text-sm mt-1">${esc((row.cast_list || row.cast) || "—")}</div>
+          </div>
 
-            <div class="grid md:grid-cols-3 gap-3">
-              <div>
-                <label class="text-xs text-white/70">Format</label>
-                <select id="eFormat" class="mt-1 w-full rounded-2xl px-3 py-2 input">
-                  ${["Blu-ray","DVD","Digital","4K Ultra HD","VHS"].map(v => `<option value="${v}" ${v===(row.format||"Digital")?"selected":""}>${v}</option>`).join("")}
-                </select>
-              </div>
-              <div>
-                <label class="text-xs text-white/70">Rating (0-10)</label>
-                <input id="eRating" type="number" min="0" max="10" step="0.5" value="${row.rating ?? ""}" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
-              </div>
-              <div>
-                <label class="text-xs text-white/70">Entry</label>
-                <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${row.scope}" disabled />
-              </div>
-            </div>
-
+          <div class="grid md:grid-cols-3 gap-3">
             <div>
-              <label class="text-xs text-white/70">Comment</label>
-              <textarea id="eComment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="Add your notes…">${esc(row.comment || "")}</textarea>
+              <label class="text-xs text-white/70">Format</label>
+              <select id="eFormat" class="mt-1 w-full rounded-2xl px-3 py-2 input">
+                ${["Blu-ray","DVD","Digital","4K Ultra HD","VHS"].map(v => `<option value="${v}" ${v===(row.format||"Digital")?"selected":""}>${v}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="text-xs text-white/70">Rating (0-10)</label>
+              <input id="eRating" type="number" min="0" max="10" step="0.5" value="${row.rating ?? ""}" class="mt-1 w-full rounded-2xl px-3 py-2 input" />
+            </div>
+            <div>
+              <label class="text-xs text-white/70">Entry</label>
+              <input class="mt-1 w-full rounded-2xl px-3 py-2 input" value="${row.scope}" disabled />
+            </div>
+          </div>
+
+          <div>
+            <label class="text-xs text-white/70">Comment</label>
+            <textarea id="eComment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="Add your notes…">${esc(row.comment || "")}</textarea>
+          </div>
+
+          <div class="glass rounded-2xl p-4 border border-white/10">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm text-white/70">Collections</div>
+                <div class="text-xs text-white/60 mt-0.5">Add this item to one or more collections.</div>
+              </div>
+              <button id="manageColsInline" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Manage</button>
             </div>
 
-            <div class="flex flex-col md:flex-row gap-2">
-              <button id="saveBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
-                Save changes
-              </button>
-              <button id="delBtn" class="btn rounded-2xl px-4 py-2 bg-red-500/15 hover:bg-red-500/20 border border-red-400/20">
-                Remove
-              </button>
-              <button id="cancelBtn" class="btn chip rounded-2xl px-4 py-2">Cancel</button>
+            <div class="mt-3" id="colChips"></div>
+
+            <div class="mt-3 glass rounded-2xl p-3 border border-white/10" style="max-height: 34vh; overflow:auto; -webkit-overflow-scrolling:touch;">
+              ${(collections||[]).map(c => `
+                <label class="flex items-center gap-3 py-1.5">
+                  <input type="checkbox" class="h-4 w-4" data-col-check="${esc(c.id)}" />
+                  <span class="text-sm">${esc(c.name)}</span>
+                </label>
+              `).join("") || `<div class="text-sm text-white/60 py-2">No collections yet. Tap “Manage” to create one.</div>`}
             </div>
+          </div>
+
+          <div class="flex flex-col md:flex-row gap-2">
+            <button id="saveBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
+              Save changes
+            </button>
+            <button id="delBtn" class="btn rounded-2xl px-4 py-2 bg-red-500/15 hover:bg-red-500/20 border border-red-400/20">
+              Remove
+            </button>
+            <button id="cancelBtn" class="btn chip rounded-2xl px-4 py-2">Cancel</button>
           </div>
         </div>
       </div>
-    `);
+    </div>
+  `);
 
-    document.getElementById("mClose").addEventListener("click", closeModal);
-    document.getElementById("cancelBtn").addEventListener("click", closeModal);
+  // Collections chips + checkbox state
+  const chips = document.getElementById("colChips");
+  const renderChips = () => {
+    if (!chips) return;
+    const names = Array.from(currentIds)
+      .map(getCollectionName)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    chips.innerHTML = names.length
+      ? names.map(n => `<span class="chip px-2 py-1 rounded-full text-xs mr-2 inline-block mb-2">${esc(n)}</span>`).join("")
+      : `<span class="text-xs text-white/60">Not in any collections yet.</span>`;
+  };
+  renderChips();
 
-    document.getElementById("saveBtn").addEventListener("click", async () => {
-      const format = document.getElementById("eFormat").value;
-      const ratingRaw = document.getElementById("eRating").value;
-      const rating = ratingRaw === "" ? null : Number(ratingRaw);
-      const comment = document.getElementById("eComment").value;
-
-      const { error } = await supabase
-        .from("media_items")
-        .update({ format, rating, comment })
-        .eq("id", row.id);
-
-      if (error) {
-        console.error(error);
-        showToast("Save failed");
-        return;
-      }
-
-      await loadLibrary();
-      showToast("Saved");
-      closeModal();
+  [...modalBody.querySelectorAll("[data-col-check]")].forEach(cb => {
+    const cid = cb.getAttribute("data-col-check");
+    cb.checked = currentIds.has(cid);
+    cb.addEventListener("change", () => {
+      if (cb.checked) currentIds.add(cid);
+      else currentIds.delete(cid);
+      renderChips();
     });
+  });
 
-    document.getElementById("delBtn").addEventListener("click", async () => {
-      await deleteItem(row.id);
-      closeModal();
-    });
-  }
+  document.getElementById("manageColsInline")?.addEventListener("click", () => {
+    openCollectionsManager();
+  });
+
+  document.getElementById("mClose").addEventListener("click", closeModal);
+  document.getElementById("cancelBtn").addEventListener("click", closeModal);
+
+  document.getElementById("saveBtn").addEventListener("click", async () => {
+    const format = document.getElementById("eFormat").value;
+    const ratingRaw = document.getElementById("eRating").value;
+    const rating = ratingRaw === "" ? null : Number(ratingRaw);
+    const comment = document.getElementById("eComment").value;
+
+    const { error } = await supabase
+      .from("media_items")
+      .update({ format, rating, comment })
+      .eq("id", row.id);
+
+    if (error) {
+      console.error(error);
+      showToast("Save failed");
+      return;
+    }
+
+    const okCols = await syncItemCollections(row.id, currentIds);
+    if (!okCols) return;
+
+    await loadLibrary();
+    showToast("Saved");
+    closeModal();
+  });
+
+  document.getElementById("delBtn").addEventListener("click", async () => {
+    await deleteItem(row.id);
+    closeModal();
+  });
+}
 
   // ---- Add flow
   async function showAddFlow(media_type, tmdb_id) {
@@ -657,9 +1227,37 @@ function getGroupKey(row, mode) {
       return;
     }
 
+    // Preselect the currently-filtered collection (nice QoL)
+    const selectedColIds = new Set();
+    const preCol = (filterCollection?.value || "all");
+    if (preCol !== "all") selectedColIds.add(preCol);
+
     const poster = d.poster_url
       ? `<img src="${esc(d.poster_url)}" class="w-full h-full object-cover" />`
       : `<div class="w-full h-full flex items-center justify-center text-4xl">🎬</div>`;
+
+    const collectionsSection = `
+      <div class="glass rounded-2xl p-4 border border-white/10">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <div class="text-sm text-white/70">Collections</div>
+            <div class="text-xs text-white/60 mt-0.5">Add what you save here into one or more collections.</div>
+          </div>
+          <button id="manageColsInline" class="btn chip rounded-2xl px-3 py-1.5 text-sm">Manage</button>
+        </div>
+
+        <div class="mt-3" id="colChips"></div>
+
+        <div class="mt-3 glass rounded-2xl p-3 border border-white/10" style="max-height: 34vh; overflow:auto; -webkit-overflow-scrolling:touch;">
+          ${(collections||[]).map(c => `
+            <label class="flex items-center gap-3 py-1.5">
+              <input type="checkbox" class="h-4 w-4" data-col-check="${esc(c.id)}" />
+              <span class="text-sm">${esc(c.name)}</span>
+            </label>
+          `).join("") || `<div class="text-sm text-white/60 py-2">No collections yet. Tap “Manage” to create one.</div>`}
+        </div>
+      </div>
+    `;
 
     const tvControls = d.media_type === "tv" ? `
       <div class="glass rounded-2xl p-4 border border-white/10">
@@ -733,6 +1331,8 @@ function getGroupKey(row, mode) {
               <textarea id="comment" rows="3" class="mt-1 w-full rounded-2xl px-3 py-2 input" placeholder="What did you think?"></textarea>
             </div>
 
+            ${collectionsSection}
+
             <div class="flex flex-col md:flex-row gap-2">
               <button id="saveTitleBtn" class="btn rounded-2xl px-4 py-2 bg-emerald-500/15 hover:bg-emerald-500/20 border border-emerald-400/20">
                 Save to library
@@ -746,6 +1346,34 @@ function getGroupKey(row, mode) {
       </div>
     `);
 
+    // Collections chips + checkbox state
+    const chips = document.getElementById("colChips");
+    const renderChips = () => {
+      if (!chips) return;
+      const names = Array.from(selectedColIds)
+        .map(getCollectionName)
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b));
+      chips.innerHTML = names.length
+        ? names.map(n => `<span class="chip px-2 py-1 rounded-full text-xs mr-2 inline-block mb-2">${esc(n)}</span>`).join("")
+        : `<span class="text-xs text-white/60">Not in any collections yet.</span>`;
+    };
+    renderChips();
+
+    [...modalBody.querySelectorAll("[data-col-check]")].forEach(cb => {
+      const cid = cb.getAttribute("data-col-check");
+      cb.checked = selectedColIds.has(cid);
+      cb.addEventListener("change", () => {
+        if (cb.checked) selectedColIds.add(cid);
+        else selectedColIds.delete(cid);
+        renderChips();
+      });
+    });
+
+    document.getElementById("manageColsInline")?.addEventListener("click", () => {
+      openCollectionsManager();
+    });
+
     document.getElementById("mClose").addEventListener("click", closeModal);
     document.getElementById("cancelBtn").addEventListener("click", closeModal);
 
@@ -757,6 +1385,65 @@ function getGroupKey(row, mode) {
       const releasePart = USE_RELEASE_DATE_COLUMN ? { release_date: d.release_date_full || null } : {};
       return { format, rating, comment, releasePart };
     };
+
+    async function findMediaItemId(keys) {
+      let q = supabase.from("media_items").select("id")
+        .eq("user_id", sessionUser.id)
+        .eq("tmdb_id", keys.tmdb_id)
+        .eq("media_type", keys.media_type)
+        .eq("scope", keys.scope);
+
+      if (keys.season_number === null || keys.season_number === undefined) q = q.is("season_number", null);
+      else q = q.eq("season_number", keys.season_number);
+
+      if (keys.episode_number === null || keys.episode_number === undefined) q = q.is("episode_number", null);
+      else q = q.eq("episode_number", keys.episode_number);
+
+      const { data, error } = await q.maybeSingle();
+      if (error) {
+        console.error(error);
+        return null;
+      }
+      return data?.id ?? null;
+    }
+
+    async function bulkAssignCollections(mediaItemIds) {
+      if (!selectedColIds.size) return true;
+      const ids = (mediaItemIds || []).filter(Boolean);
+      if (!ids.length) return true;
+
+      const rows = [];
+      for (const mid of ids) {
+        for (const cid of selectedColIds) {
+          rows.push({ user_id: sessionUser.id, collection_id: cid, media_item_id: mid });
+        }
+      }
+
+      const { error } = await supabase
+        .from("collection_items")
+        .upsert(rows, { onConflict: "collection_id,media_item_id" });
+
+      if (error) {
+        console.error(error);
+        showToast("Saved, but couldn’t assign collections");
+        return false;
+      }
+      return true;
+    }
+
+    async function upsertAndAssign(payload) {
+      const ok = await tryUpsert(payload);
+      if (!ok) return null;
+      const id = await findMediaItemId({
+        tmdb_id: payload.tmdb_id,
+        media_type: payload.media_type,
+        scope: payload.scope,
+        season_number: payload.season_number,
+        episode_number: payload.episode_number
+      });
+      if (id) await bulkAssignCollections([id]);
+      return id;
+    }
 
     document.getElementById("saveTitleBtn").addEventListener("click", async () => {
       const { format, rating, comment, releasePart } = buildCommon();
@@ -780,8 +1467,13 @@ function getGroupKey(row, mode) {
         overview: d.overview,
         runtime: d.runtime
       };
-      const ok = await upsertItem(payload);
-      if (ok) closeModal();
+
+      const id = await upsertAndAssign(payload);
+      if (!id) return showToast("Save failed");
+
+      await loadLibrary();
+      showToast("Saved");
+      closeModal();
     });
 
     if (d.media_type === "tv") {
@@ -795,8 +1487,8 @@ function getGroupKey(row, mode) {
       loadSeasonBtn.addEventListener("click", async () => {
         const season_number = Number(seasonSelect.value);
         seasonPicker.classList.remove("hidden");
-        // scroll into view within modal
         seasonPicker.scrollIntoView({ behavior: "smooth", block: "start" });
+
         const status = document.getElementById("episodesStatus");
         status.textContent = "Loading episodes…";
 
@@ -831,16 +1523,18 @@ function getGroupKey(row, mode) {
         document.getElementById("hidePicker").addEventListener("click", () => seasonPicker.classList.add("hidden"));
 
         const epList = document.getElementById("epList");
+        status.textContent = `Loaded ${episodes.length} episodes.`;
+
         epList.innerHTML = episodes.map(ep => {
-          const still = ep.still_path
-            ? `<img src="${esc(imgUrl(ep.still_path))}" class="w-14 h-10 object-cover rounded-xl border border-white/10" />`
-            : `<div class="w-14 h-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">🎞️</div>`;
+          const still = ep.still_path ? imgUrl(ep.still_path) : null;
           return `
-            <div class="glass rounded-2xl p-3 border border-white/10 flex items-center gap-3">
-              ${still}
+            <div class="glass rounded-2xl p-3 border border-white/10 flex items-start gap-3">
+              <div class="w-20 h-12 rounded-xl overflow-hidden bg-white/5 border border-white/10 flex-shrink-0">
+                ${still ? `<img src="${still}" class="w-full h-full object-cover" />` : `<div class="w-full h-full flex items-center justify-center text-lg">📺</div>`}
+              </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold truncate">E${ep.episode_number} • ${esc(ep.name)}</div>
-                <div class="text-xs text-white/60 truncate">${esc(ep.air_date || "")}</div>
+                <div class="font-semibold text-sm truncate">E${ep.episode_number} • ${esc(ep.name || "")}</div>
+                <div class="text-xs text-white/60 mt-0.5">${esc(ep.air_date || "")}</div>
               </div>
               <button class="btn chip rounded-2xl px-3 py-1.5 text-sm" data-add-ep="${ep.episode_number}">Add</button>
             </div>
@@ -869,15 +1563,18 @@ function getGroupKey(row, mode) {
             overview: d.overview,
             runtime: d.runtime
           };
-          await upsertItem(payload);
+          const id = await upsertAndAssign(payload);
+          if (!id) return showToast("Save failed");
+          await loadLibrary();
+          showToast(`Season ${season_number} saved`);
         });
 
         [...epList.querySelectorAll("button[data-add-ep]")].forEach(btn => {
           btn.addEventListener("click", async () => {
             const episode_number = Number(btn.dataset.addEp);
-            const ep = episodes.find(e => e.episode_number === episode_number);
-            const { format, rating, comment, releasePart } = buildCommon();
+            const ep = episodes.find(x => x.episode_number === episode_number);
 
+            const { format, rating, comment, releasePart } = buildCommon();
             const payload = {
               user_id: sessionUser.id,
               tmdb_id: d.tmdb_id,
@@ -898,12 +1595,16 @@ function getGroupKey(row, mode) {
               overview: ep?.overview || d.overview,
               runtime: ep?.runtime ? `${ep.runtime} min` : d.runtime
             };
-            await upsertItem(payload);
+            const id = await upsertAndAssign(payload);
+            if (!id) return showToast("Save failed");
+            await loadLibrary();
+            showToast(`Added S${season_number}E${episode_number}`);
           });
         });
       });
     }
   }
+
 
   // ---- Search UI
   function setSearchType(t) {
@@ -1123,6 +1824,8 @@ function maybeHandleRecoveryFromUrl() {
     profileBtn?.classList.remove("hidden");
     if (profileEmail) profileEmail.textContent = sessionUser.email || "Signed in";
     closeProfileMenu();
+    setMainView("library");
+    closeCollectionDetail();
     await loadLibrary();
   }
 
@@ -1181,9 +1884,24 @@ function maybeHandleRecoveryFromUrl() {
   });
 
   // ---- Library control listeners
-  [filterScope, filterMediaType, filterFormat, filterGenre, sortBy, minRating, groupBy].filter(Boolean)
+  [filterScope, filterMediaType, filterFormat, filterGenre, filterCollection, sortBy, minRating, groupBy].filter(Boolean)
     .forEach(el => el.addEventListener("change", renderLibrary));
   librarySearch?.addEventListener("input", () => renderLibrary());
+  manageCollectionsBtn?.addEventListener("click", () => openCollectionsManager());
+
+// ---- Collections view listeners
+tabLibrary?.addEventListener("click", () => setMainView("library"));
+tabCollections?.addEventListener("click", () => setMainView("collections"));
+collectionsManageBtn?.addEventListener("click", () => openCollectionsManager());
+collectionsSearch?.addEventListener("input", () => renderCollectionsHome());
+collectionBackBtn?.addEventListener("click", () => closeCollectionDetail());
+collectionViewInLibraryBtn?.addEventListener("click", () => {
+  if (!activeCollectionId) return;
+  if (filterCollection) filterCollection.value = activeCollectionId;
+  setMainView("library");
+  renderLibrary();
+});
+
 // ---- Mobile: collapse filters panel
 let filtersOpen = false;
 function setFiltersPanelOpen(open) {
