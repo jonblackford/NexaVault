@@ -1,7 +1,8 @@
-const CACHE_NAME = "nexavault-cache-v27";
+const CACHE_NAME = "nexavault-cache-v28";
 const ASSETS = [
     "./",
     "./index.html",
+    "./app.js?v=28",
     "./app.js",
     "./manifest.webmanifest",
     "./icons/icon-192.png",
