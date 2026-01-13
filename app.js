@@ -112,6 +112,14 @@ function clearUrlHash() {
     setTimeout(() => toast.classList.add("hidden"), 2600);
   }
 
+  function clearTmdbSearchUI() {
+    if (searchInput) searchInput.value = "";
+    if (searchResults) {
+      searchResults.innerHTML = "";
+      searchResults.classList.add("hidden");
+    }
+  }
+
   function lockBodyScroll() {
     document.documentElement.classList.add("modal-open");
     document.body.classList.add("modal-open");
@@ -743,11 +751,14 @@ function renderCollectionDetail() {
       row.scope === "season" ? `Season ${row.season_number}` :
       row.scope === "episode" ? `S${row.season_number}E${row.episode_number}` :
       "Title";
+    const subtitle =
+      row.scope === "title" ? "" :
+      `<div class="poster-subtitle text-xs text-white/60 mt-1 truncate">${esc(scopeLabel)}</div>`;
     const rating = (row.rating ?? null);
 
     return `
-      <button class="poster-card rounded-2xl overflow-hidden text-left relative" data-rowid="${esc(row.id)}">
-        <button class="absolute top-2 right-2 chip rounded-xl px-2 py-1 text-xs z-10"
+      <div class="poster-card rounded-2xl overflow-hidden text-left relative" data-rowid="${esc(row.id)}" role="button" tabindex="0">
+        <button type="button" class="absolute top-2 right-2 chip rounded-xl px-2 py-1 text-xs z-10"
           title="Remove from collection" data-remove-from-collection="${esc(row.id)}">✕</button>
 
         <div class="relative">
@@ -760,27 +771,39 @@ function renderCollectionDetail() {
         </div>
 
         <div class="p-3">
-          <div class="font-semibold text-sm truncate">${esc(row.title)}</div>
-          <div class="text-xs text-white/60 mt-1 truncate">${esc(row.year || "")}</div>
+          <div class="poster-title font-semibold text-sm truncate">${esc(row.title)}</div>
+          ${subtitle}
+          <div class="poster-meta text-xs text-white/65 mt-2 flex items-center justify-between gap-2">
+            <span class="truncate">${esc(row.year || "")}</span>
+            <span class="chip px-2 py-0.5 rounded-full">${esc(row.format || "Digital")}</span>
+          </div>
         </div>
-      </button>
+      </div>
     `;
   };
+
 
   collectionItemsGrid.innerHTML = sortLibraryRows(rows).map(cardHtml).join("");
 
   // open item modal
-  [...collectionItemsGrid.querySelectorAll("button[data-rowid]")].forEach(card => {
-    card.addEventListener("click", (e) => {
+  [...collectionItemsGrid.querySelectorAll("[data-rowid]")].forEach(card => {
+    const open = (e) => {
       // ignore clicks from remove button
-      if (e.target && e.target.closest("[data-remove-from-collection]")) return;
+      if (e?.target && e.target.closest && e.target.closest("[data-remove-from-collection]")) return;
       const rowId = card.getAttribute("data-rowid");
       const row = (library || []).find(r => safeKey(r.id) === safeKey(rowId));
       if (row) showItemModal(row);
+    };
+    card.addEventListener("click", open);
+    card.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        open(e);
+      }
     });
   });
 
-  // remove buttons
+// remove buttons
   [...collectionItemsGrid.querySelectorAll("[data-remove-from-collection]")].forEach(btn => {
     btn.addEventListener("click", async (e) => {
       e.preventDefault();
@@ -1387,6 +1410,8 @@ function showItemModal(row) {
     };
 
     async function findMediaItemId(keys) {
+      // NOTE: do NOT use maybeSingle() here. If a unique constraint wasn't installed early,
+      // you can briefly end up with duplicate rows, and maybeSingle() throws.
       let q = supabase.from("media_items").select("id")
         .eq("user_id", sessionUser.id)
         .eq("tmdb_id", keys.tmdb_id)
@@ -1399,11 +1424,18 @@ function showItemModal(row) {
       if (keys.episode_number === null || keys.episode_number === undefined) q = q.is("episode_number", null);
       else q = q.eq("episode_number", keys.episode_number);
 
-      const { data, error } = await q.maybeSingle();
+      const { data, error } = await q
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1);
+
       if (error) {
         console.error(error);
         return null;
       }
+      return data?.[0]?.id ?? null;
+    }
+
       return data?.id ?? null;
     }
 
@@ -1473,6 +1505,7 @@ function showItemModal(row) {
 
       await loadLibrary();
       showToast("Saved");
+      clearTmdbSearchUI();
       closeModal();
     });
 
@@ -1567,6 +1600,7 @@ function showItemModal(row) {
           if (!id) return showToast("Save failed");
           await loadLibrary();
           showToast(`Season ${season_number} saved`);
+          clearTmdbSearchUI();
         });
 
         [...epList.querySelectorAll("button[data-add-ep]")].forEach(btn => {
@@ -1599,6 +1633,7 @@ function showItemModal(row) {
             if (!id) return showToast("Save failed");
             await loadLibrary();
             showToast(`Added S${season_number}E${episode_number}`);
+              clearTmdbSearchUI();
           });
         });
       });
