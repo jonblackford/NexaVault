@@ -45,6 +45,7 @@
   const filterMediaType = document.getElementById("filterMediaType");
   const filterFormat = document.getElementById("filterFormat");
   const librarySearch = document.getElementById("librarySearch");
+  const librarySearchWrap = document.getElementById("librarySearchWrap");
   const sortBy = document.getElementById("sortBy");
   const minRating = document.getElementById("minRating");
   const filterGenre = document.getElementById("filterGenre");
@@ -647,7 +648,8 @@ function setMainView(view) {
   if (libraryView) libraryView.classList.toggle("hidden", activeMainView !== "library");
   if (collectionsView) collectionsView.classList.toggle("hidden", activeMainView !== "collections");
 
-  const setActiveBtn = (btn, on) => {
+    if (librarySearchWrap) librarySearchWrap.classList.toggle("hidden", activeMainView !== "library");
+const setActiveBtn = (btn, on) => {
     if (!btn) return;
     btn.classList.toggle("bg-white/10", on);
     btn.classList.toggle("border-white/10", on);
