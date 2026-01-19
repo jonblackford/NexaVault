@@ -269,6 +269,8 @@ function clearUrlHash() {
   }
 
   async function tryUpsert(payload) {
+    // Ensure format is always present, because format becomes part of the unique key.
+    if (!payload.format) payload.format = "Digital";
     // Schema-resilient upsert: retry if column mismatch
     const attempts = [];
 
@@ -298,7 +300,8 @@ function clearUrlHash() {
 
     for (const p of attempts) {
       const { error } = await supabase.from("media_items").upsert(p, {
-        onConflict: "user_id,tmdb_id,media_type,scope,season_number,episode_number"
+        // Allow the same title/season/episode to exist in multiple formats.
+        onConflict: "user_id,tmdb_id,media_type,scope,season_number,episode_number,format"
       });
       if (!error) return true;
       console.error(error);
@@ -1211,7 +1214,13 @@ function showItemModal(row) {
 
     if (error) {
       console.error(error);
-      showToast("Save failed");
+      // If format is part of the unique key, changing format to one that already exists
+      // for the same title/season/episode will trigger a unique violation.
+      if (error.code === "23505") {
+        showToast("That format already exists for this item");
+      } else {
+        showToast("Save failed");
+      }
       return;
     }
 
@@ -1418,7 +1427,9 @@ function showItemModal(row) {
         .eq("user_id", sessionUser.id)
         .eq("tmdb_id", keys.tmdb_id)
         .eq("media_type", keys.media_type)
-        .eq("scope", keys.scope);
+        .eq("scope", keys.scope)
+        // format is now part of the unique key, so include it when resolving the inserted row id
+        .eq("format", keys.format || "Digital");
 
       if (keys.season_number === null || keys.season_number === undefined) {
         // Some older schemas normalize null -> 0; accept either so we can reliably fetch the inserted row id.
@@ -1479,7 +1490,8 @@ function showItemModal(row) {
         media_type: payload.media_type,
         scope: payload.scope,
         season_number: payload.season_number,
-        episode_number: payload.episode_number
+        episode_number: payload.episode_number,
+        format: payload.format || "Digital"
       });
 
       // If we couldn't find the row id (often caused by legacy null/0 normalization),
@@ -1491,7 +1503,8 @@ function showItemModal(row) {
             media_type: payload.media_type,
             scope: payload.scope,
             season_number: null,
-            episode_number: null
+            episode_number: null,
+            format: payload.format || "Digital"
           });
         }
       }
